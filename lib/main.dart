@@ -16,9 +16,8 @@ Future<void> main() async {
 
   try {
     await NotificationService.init();
-    // Notification test moved to Awakening Screen button only
   } catch (e) {
-    print("Notification error: $e");
+    // Notification initialization error
   }
 
   runApp(const ARISEApp());
@@ -40,7 +39,15 @@ class ARISEApp extends StatelessWidget {
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
             seedColor: Colors.deepPurpleAccent,
+            secondary: Colors.cyanAccent,
             brightness: Brightness.dark,
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              foregroundColor: Colors.cyanAccent,
+              side: const BorderSide(color: Colors.cyanAccent, width: 1),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+            ),
           ),
         ),
 

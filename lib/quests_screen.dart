@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
-import '../engine/dynamic_engine.dart';
-import '../services/hive_service.dart';
+import 'package:provider/provider.dart';
+import 'engine/dynamic_engine.dart';
+import 'services/hive_service.dart';
+import 'widgets/system_overlay.dart';
+import 'widgets/xp_floating_text.dart';
+import 'player_provider.dart';
 
 class QuestsScreen extends StatefulWidget {
   const QuestsScreen({super.key});
@@ -131,7 +135,44 @@ class _QuestsScreenState extends State<QuestsScreen> {
                     ? null
                     : () async {
                         await engine.completeDungeon(context);
-                        setState(() {});
+                        if (mounted) {
+                          // 🔥 ATTRIBUTE EFFECTS: Intelligence Bonus Rebalance
+                          final player = Provider.of<PlayerProvider>(context,
+                              listen: false);
+                          
+                          int baseDungeonXP = 15;
+                          int intBonus = player.intelligence >= 20
+                              ? 4
+                              : (player.intelligence >= 10 ? 2 : 0);
+                          
+                          // 🔥 PHASE 6: TACTICAL INSIGHT
+                          int insightBonus = 0;
+                          if (player.insightActive) {
+                            insightBonus = 5;
+                            player.consumeInsight();
+                            SystemOverlay.show(
+                                context,
+                                title: "ABILITY TRIGGERED",
+                                message: "Tactical Insight Applied",
+                              );
+                          }
+
+                          int finalXP = baseDungeonXP + intBonus + insightBonus;
+
+                          // Only add the bonus part here because engine already added baseXP
+                          int extraXP = intBonus + insightBonus;
+                          if (extraXP > 0) {
+                            player.addXP(extraXP);
+                          }
+
+                          SystemOverlay.show(
+                            context,
+                            title: "DUNGEON CLEAR",
+                            message: "Success\nBonus XP: +$extraXP",
+                          );
+                          XPFloatingText.show(context, amount: finalXP);
+                          setState(() {});
+                        }
                       },
                 child: const Text("Complete Dungeon"),
               ),

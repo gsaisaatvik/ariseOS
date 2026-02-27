@@ -23,31 +23,10 @@ class CoreEngine {
     await rewardCoreXP();
   }
 
-  /// 🔥 REWARD XP FOR CORE QUEST
+  /// 🔥 REWARD XP FOR CORE QUEST (Handled by PlayerProvider in UI for stability)
   Future<void> rewardCoreXP() async {
-    if (penaltyActive) return;
-
-    final rawXP = _settingsBox.get('lifetimeXP', defaultValue: 0);
-    int xp = 0;
-    if (rawXP is int) {
-      xp = rawXP;
-    } else if (rawXP is double) {
-      xp = rawXP.toInt();
-    }
-
-    final rawWallet = _settingsBox.get('walletXP', defaultValue: 0);
-    int wallet = 0;
-    if (rawWallet is int) {
-      wallet = rawWallet;
-    } else if (rawWallet is double) {
-      wallet = rawWallet.toInt();
-    }
-
-    xp += 5;
-    wallet += 5;
-
-    await _settingsBox.put('lifetimeXP', xp);
-    await _settingsBox.put('walletXP', wallet);
+    // Moved to PlayerProvider.addXP in UI layer to ensure single source of truth
+    // and correctly handle Level Up point allocation.
   }
 
   /// 🔥 AUTO CHECK IF NEW DAY

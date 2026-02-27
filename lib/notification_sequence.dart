@@ -36,9 +36,7 @@ class _NotificationSequenceState extends State<NotificationSequence> {
       // 🔥 PASS PROVIDER DIRECTLY
       final engine = DungeonEngine(playerProvider);
 
-      final dungeon = await engine.generateOrFetchToday();
-
-      print("TODAY DUNGEON: ${dungeon?.subjectId}, XP: ${dungeon?.xpReward}");
+      await engine.generateOrFetchToday();
     });
 
     _maybeAdvance();

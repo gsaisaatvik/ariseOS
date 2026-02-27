@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/hive_service.dart';
+import 'services/hive_service.dart';
+import 'widgets/system_overlay.dart';
 
 class RewardsScreen extends StatefulWidget {
   const RewardsScreen({super.key});

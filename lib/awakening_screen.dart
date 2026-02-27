@@ -15,11 +15,11 @@ class AwakeningScreen extends StatelessWidget {
       await NotificationService.scheduleDailyNotifications();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Syncing with System... (10s Wait)")),
+          const SnackBar(content: Text("Syncing with System...")),
         );
       }
     } catch (e) {
-      print("Error scheduling notifications: $e");
+      // Notification scheduling error
     }
 
     if (context.mounted) {
