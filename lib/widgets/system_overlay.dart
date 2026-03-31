@@ -3,8 +3,12 @@ import 'dart:ui';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:vibration/vibration.dart';
 
+import '../ui/theme/app_colors.dart';
+import '../ui/theme/app_text_styles.dart';
+import '../ui/widgets/widgets.dart';
+
 class SystemOverlay {
-  static void show(BuildContext context, {required String title, required String message}) {
+  static void show(BuildContext context, {required String title, required String message, String? playerName}) {
     OverlayState? overlayState = Overlay.of(context);
     late OverlayEntry overlayEntry;
 
@@ -12,6 +16,7 @@ class SystemOverlay {
       builder: (context) => _SystemOverlayWidget(
         title: title,
         message: message,
+        playerName: playerName,
         onDismiss: () => overlayEntry.remove(),
       ),
     );
@@ -23,11 +28,13 @@ class SystemOverlay {
 class _SystemOverlayWidget extends StatefulWidget {
   final String title;
   final String message;
+  final String? playerName;
   final VoidCallback onDismiss;
 
   const _SystemOverlayWidget({
     required this.title,
     required this.message,
+    this.playerName,
     required this.onDismiss,
   });
 
@@ -87,7 +94,8 @@ class _SystemOverlayWidgetState extends State<_SystemOverlayWidget>
   Future<void> _playAppearEffects() async {
     try {
       await _audioPlayer.play(AssetSource('audio/system_on.mp3'));
-      if (await Vibration.hasVibrator() ?? false) {
+      final hasVibrator = await Vibration.hasVibrator();
+      if (hasVibrator) {
         Vibration.vibrate(duration: 40);
       }
     } catch (e) {
@@ -141,16 +149,29 @@ class _SystemOverlayWidgetState extends State<_SystemOverlayWidget>
                       width: MediaQuery.of(context).size.width * 0.85,
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.9),
-                        // Sharp borders
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            AppColors.surfaceElevated.withOpacity(0.96),
+                            AppColors.surface.withOpacity(0.94),
+                          ],
+                        ),
                         border: Border.all(
-                          color: const Color(0xFF00FFFF).withOpacity(0.7),
+                          color: AppColors.primaryBlue.withOpacity(0.65),
                           width: 1.5,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF00FFFF).withOpacity(0.3 * _glowAnimation.value),
+                            color: AppColors.primaryBlue
+                                .withOpacity(0.22 * _glowAnimation.value),
                             blurRadius: 15 * _glowAnimation.value,
+                            spreadRadius: 0,
+                          ),
+                          BoxShadow(
+                            color: AppColors.primaryViolet
+                                .withOpacity(0.10 * _glowAnimation.value),
+                            blurRadius: 26 * _glowAnimation.value,
                             spreadRadius: 0,
                           ),
                         ],
@@ -159,44 +180,36 @@ class _SystemOverlayWidgetState extends State<_SystemOverlayWidget>
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Top Header
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                "SYSTEM MESSAGE",
-                                style: TextStyle(
-                                  color: const Color(0xFF00FFFF).withOpacity(0.6),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 3,
-                                  fontFamily: 'monospace',
-                                ),
-                              ),
-                              Icon(
-                                Icons.info_outline,
-                                color: const Color(0xFF00FFFF).withOpacity(0.6),
-                                size: 12,
-                              ),
-                            ],
+                          const SystemHeaderBar(
+                            label: "NOTIFICATION",
+                            icon: Icons.error_outline,
                           ),
                           const SizedBox(height: 8),
                           // Divider line
                           Container(
                             height: 1,
                             width: double.infinity,
-                            color: const Color(0xFF00FFFF).withOpacity(0.4),
+                            color: AppColors.borderSoft,
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
+                          if (widget.playerName != null) ...[
+                            Text(
+                              "Subject: ${widget.playerName!.toUpperCase()}",
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                          ],
                           // Main Title
                           Text(
                             widget.title.toUpperCase(),
-                            style: const TextStyle(
-                              color: Color(0xFF00FFFF),
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 2,
-                              fontFamily: 'monospace',
+                            style: AppTextStyles.headerMedium.copyWith(
+                              color: AppColors.primaryBlue,
+                              letterSpacing: 3,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -204,11 +217,10 @@ class _SystemOverlayWidgetState extends State<_SystemOverlayWidget>
                           Text(
                             widget.message,
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.9),
+                              color: AppColors.textPrimary.withOpacity(0.92),
                               fontSize: 14,
                               fontWeight: FontWeight.w400,
                               height: 1.4,
-                              fontFamily: 'monospace',
                             ),
                           ),
                         ],

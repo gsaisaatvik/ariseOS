@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'player_provider.dart';
-import 'login_screen.dart';
-import 'dashboard.dart';
 import 'services/hive_service.dart';
 import 'root_decider.dart';
 import 'services/notification_service.dart';
+import 'ui/theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,23 +32,7 @@ class ARISEApp extends StatelessWidget {
       child: MaterialApp(
         title: 'ARISE OS',
         debugShowCheckedModeBanner: false,
-
-        // 🔥 Dark RPG-style theme
-        theme: ThemeData.dark().copyWith(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.deepPurpleAccent,
-            secondary: Colors.cyanAccent,
-            brightness: Brightness.dark,
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              foregroundColor: Colors.cyanAccent,
-              side: const BorderSide(color: Colors.cyanAccent, width: 1),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-            ),
-          ),
-        ),
+        theme: AppTheme.ariseDarkTheme,
 
         // Use RootDecider to decide initial screen
         home: RootDecider(),

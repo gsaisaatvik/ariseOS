@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
-import 'dart:typed_data';
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notifications =
@@ -58,13 +57,12 @@ class NotificationService {
     }
 
     await _notifications.zonedSchedule(
-      101,
-      'DAILY QUESTS ASSIGNED',
-      'The System has assigned your core training. Courage of the weak.',
-      scheduledStartTime,
-      details,
+      id: 101,
+      title: 'DAILY QUESTS ASSIGNED',
+      body: 'The System has assigned your core training. Courage of the weak.',
+      scheduledDate: scheduledStartTime,
+      notificationDetails: details,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.time,
     );
 
@@ -75,13 +73,25 @@ class NotificationService {
     }
 
     await _notifications.zonedSchedule(
-      102,
-      'DAILY DUNGEON OPENED',
-      'The gate is open. High-tier rewards detected.',
-      scheduledDungeonTime,
-      details,
+      id: 102,
+      title: 'DAILY DUNGEON OPENED',
+      body: 'The gate is open. High-tier rewards detected.',
+      scheduledDate: scheduledDungeonTime,
+      notificationDetails: details,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.time,
+    );
+
+    // Midnight Notification Phase 16
+    var scheduledMidnightTime = tz.TZDateTime(tz.local, now.year, now.month, now.day + 1, 0, 0);
+
+    await _notifications.zonedSchedule(
+      id: 103,
+      title: 'SYSTEM NOTIFICATION',
+      body: '[DAILY QUEST: PREPARE FOR TRUTH] Directives have been reset.',
+      scheduledDate: scheduledMidnightTime,
+      notificationDetails: details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time,
     );
   }

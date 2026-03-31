@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'player_provider.dart';
 import 'engine/dungeon_engine.dart';
-import 'services/hive_service.dart';
 import 'awakening_screen.dart';
+import 'ui/widgets/widgets.dart';
+import 'ui/theme/app_text_styles.dart';
 
 class NotificationSequence extends StatefulWidget {
   const NotificationSequence({super.key});
@@ -70,56 +71,51 @@ class _NotificationSequenceState extends State<NotificationSequence> {
     final bool decision = _requiresDecision(current);
 
     return Scaffold(
-      backgroundColor: Colors.black,
       body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.red[900],
-                  border: Border.all(color: Colors.yellow, width: 3),
-                ),
-                child: Text(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          child: HolographicPanel(
+            key: ValueKey(_index),
+            header: const SystemHeaderBar(label: 'NOTIFICATION'),
+            emphasize: true,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
                   current,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: AppTextStyles.body,
                   textAlign: TextAlign.center,
                 ),
-              ),
-              const SizedBox(height: 24),
-              if (decision)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    ElevatedButton(
+                const SizedBox(height: 24),
+                if (decision)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: PrimaryActionButton(
+                          label: 'Yes',
+                          onPressed: _next,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SecondaryActionButton(
+                          label: 'No',
+                          onPressed: _next,
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  SizedBox(
+                    width: double.infinity,
+                    child: PrimaryActionButton(
+                      label: 'Continue',
                       onPressed: _next,
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green),
-                      child: const Text('YES'),
                     ),
-                    ElevatedButton(
-                      onPressed: _next,
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red),
-                      child: const Text('NO'),
-                    ),
-                  ],
-                )
-              else
-                ElevatedButton(
-                  onPressed: _next,
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueGrey),
-                  child: const Text('OK'),
-                ),
-            ],
+                  ),
+              ],
+            ),
           ),
         ),
       ),

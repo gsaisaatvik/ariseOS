@@ -3,6 +3,8 @@ import 'status_screen.dart';
 import 'quests_screen.dart';
 import 'skills_screen.dart';
 import 'rewards_screen.dart';
+import 'ui/widgets/widgets.dart';
+import 'ui/widgets/holographic_nav_bar.dart';
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -12,63 +14,41 @@ class Dashboard extends StatefulWidget {
 }
 
 class _DashboardState extends State<Dashboard> {
-  int _selectedIndex = 0;
+  int _currentIndex = 0;
 
-  // ✅ NOT static / NOT const
-  late final List<Widget> _pages;
+  late final List<Widget> _pages = [
+    StatusScreen(),
+    QuestsScreen(),
+    SkillsScreen(),
+    RewardsScreen(),
+  ];
 
-  @override
-  void initState() {
-    super.initState();
-
-    // Pages created at runtime so Provider rebuild works
-    _pages = [
-      const StatusScreen(),
-      const QuestsScreen(),
-      const SkillsScreen(),
-      const RewardsScreen(),
-    ];
-  }
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
+  final List<HolographicNavItem> _navItems = const [
+    HolographicNavItem(icon: Icons.analytics_outlined, label: 'Status'),
+    HolographicNavItem(icon: Icons.flag_outlined, label: 'Quests'),
+    HolographicNavItem(icon: Icons.auto_awesome_outlined, label: 'Skills'),
+    HolographicNavItem(icon: Icons.card_giftcard_outlined, label: 'Rewards'),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      body: Column(
+        children: [
+          const SystemHeaderBar(label: "ARISE OS"),
 
-      // ✅ IndexedStack preserves page state while allowing rebuilds
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _pages,
-      ),
+          Expanded(
+            child: IndexedStack(index: _currentIndex, children: _pages),
+          ),
 
-      bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: Colors.grey.shade900,
-        selectedItemColor: Colors.redAccent,
-        unselectedItemColor: Colors.white70,
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.bar_chart),
-            label: 'Status',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.check_circle),
-            label: 'Quests',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.flash_on),
-            label: 'Skills',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.card_giftcard),
-            label: 'Rewards',
+          HolographicNavBar(
+            items: _navItems,
+            currentIndex: _currentIndex,
+            onTap: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
           ),
         ],
       ),

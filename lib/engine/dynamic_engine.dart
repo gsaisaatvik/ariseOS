@@ -77,18 +77,6 @@ class DynamicEngine {
 
     // Grant XP via PlayerProvider
     Provider.of<PlayerProvider>(context, listen: false).addXP(15);
-
-    // Update wallet XP
-    final rawWallet = settings.get('walletXP', defaultValue: 0);
-    int wallet = 0;
-    if (rawWallet is int) {
-      wallet = rawWallet;
-    } else if (rawWallet is double) {
-      wallet = rawWallet.toInt();
-    }
-    
-    wallet += 15;
-    await settings.put('walletXP', wallet);
   }
 
   Future<void> failDungeon() async {

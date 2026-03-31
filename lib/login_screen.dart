@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'player_provider.dart';
-import 'notification_sequence.dart';
 import 'services/hive_service.dart';
 import 'root_decider.dart';
+import 'ui/widgets/widgets.dart';
+import 'ui/theme/app_text_styles.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -43,47 +42,60 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
       body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text(
-                'Arise-OS',
-                style: TextStyle(fontSize: 48, color: Colors.red, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 48),
-              TextField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  filled: true,
-                  fillColor: Color(0xFF1A1A1A),
-                  labelStyle: TextStyle(color: Colors.white70),
+        child: SingleChildScrollView(
+          child: HolographicPanel(
+            header: const SystemHeaderBar(label: 'SYSTEM ACCESS'),
+            emphasize: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/icons/app_icon.png',
+                      height: 72,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'ARISE OS',
+                      style: AppTextStyles.headerMedium,
+                    ),
+                  ],
                 ),
-                style: const TextStyle(color: Colors.white),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  filled: true,
-                  fillColor: Color(0xFF1A1A1A),
-                  labelStyle: TextStyle(color: Colors.white70),
+                const SizedBox(height: 32),
+                Text(
+                  'Enter your credentials to link with the system.',
+                  style: AppTextStyles.bodySecondary,
                 ),
-                style: const TextStyle(color: Colors.white),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _login,
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('LOGIN', style: TextStyle(color: Colors.white)),
-              ),
-            ],
+                const SizedBox(height: 24),
+                TextField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                  ),
+                ),
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  child: PrimaryActionButton(
+                    label: 'Initialize ARISE OS',
+                    onPressed: _login,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

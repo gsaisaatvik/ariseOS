@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../ui/theme/app_colors.dart';
+import '../ui/theme/app_text_styles.dart';
+
 class XPFloatingText {
   static void show(BuildContext context, {required int amount, Offset? position}) {
     OverlayState? overlayState = Overlay.of(context);
@@ -55,11 +58,11 @@ class _XPFloatingWidgetState extends State<_XPFloatingWidget>
     _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.6, 1.0, curve: Curves.easeOut),
+        curve: const Interval(0.45, 1.0, curve: Curves.easeOut),
       ),
     );
 
-    _moveAnimation = Tween<double>(begin: 0.0, end: -40.0).animate(
+    _moveAnimation = Tween<double>(begin: 0.0, end: -46.0).animate(
       CurvedAnimation(
         parent: _controller,
         curve: Curves.easeOutCubic,
@@ -97,14 +100,17 @@ class _XPFloatingWidgetState extends State<_XPFloatingWidget>
               alignment: Alignment.center,
               child: Text(
                 "+${widget.amount} XP",
-                style: TextStyle(
-                  color: const Color(0xFF00FFFF),
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
+                style: AppTextStyles.headerMedium.copyWith(
+                  fontSize: 20,
+                  color: AppColors.primaryBlue,
                   shadows: [
                     Shadow(
-                      color: const Color(0xFF00FFFF).withOpacity(0.8),
-                      blurRadius: 12,
+                      color: AppColors.primaryBlue.withOpacity(0.75),
+                      blurRadius: 14,
+                    ),
+                    Shadow(
+                      color: AppColors.primaryViolet.withOpacity(0.35),
+                      blurRadius: 18,
                     ),
                     const Shadow(
                       color: Colors.black,

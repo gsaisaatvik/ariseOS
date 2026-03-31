@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'player_provider.dart';
+import 'ui/widgets/widgets.dart';
+import 'ui/theme/app_text_styles.dart';
 
 class SkillsScreen extends StatelessWidget {
   const SkillsScreen({super.key});
@@ -15,76 +17,36 @@ class SkillsScreen extends StatelessWidget {
     double progress =
         (player.totalXP.toDouble() / nextLevelThreshold.toDouble()).clamp(0.0, 1.0);
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        title: const Text(
-          'HUNTER PROFILE',
-          style: TextStyle(
-            color: Color(0xFF00FFFF),
-            letterSpacing: 4,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        children: [
+          HolographicPanel(
+            header: const SystemHeaderBar(label: 'STATUS'),
+            emphasize: true,
+            child: _buildProfileSection(player, progress, nextLevelThreshold),
           ),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // === SECTION 1: HUNTER PROFILE ===
-            _buildProfileSection(player, progress, nextLevelThreshold),
-
-            const SizedBox(height: 32),
-
-            // === SECTION 2: CORE ATTRIBUTES ===
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          HolographicPanel(
+            header: const SystemHeaderBar(label: 'ATTRIBUTES'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  "ATTRIBUTES",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                  ),
-                ),
                 if (player.availablePoints > 0)
                   Text(
-                    "POINTS: ${player.availablePoints}",
-                    style: const TextStyle(
-                      color: Colors.amber,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    "Points available: ${player.availablePoints}",
+                    style: AppTextStyles.bodySecondary,
                   ),
+                const SizedBox(height: 16),
+                _buildAttributeGrid(context, player),
               ],
             ),
-            const SizedBox(height: 16),
-            _buildAttributeGrid(context, player),
-
-            const SizedBox(height: 32),
-
-            // === SECTION 3: ABILITIES ===
-            const Text(
-              "ACTIVE ABILITIES",
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildAbilitiesList(player),
-
-            const SizedBox(height: 40),
-          ],
-        ),
+          ),
+          HolographicPanel(
+            header: const SystemHeaderBar(label: 'ACTIVE ABILITIES'),
+            child: _buildAbilitiesList(player),
+          ),
+        ],
       ),
     );
   }
@@ -221,24 +183,38 @@ class SkillsScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: const TextStyle(color: Colors.white70, fontSize: 10, letterSpacing: 1)),
-              const SizedBox(height: 4),
-              Text(value.toString(), style: const TextStyle(color: Color(0xFF00FFFF), fontSize: 20, fontWeight: FontWeight.bold)),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70, fontSize: 10, letterSpacing: 1),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value.toString(),
+                  style: const TextStyle(color: Color(0xFF00FFFF), fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
           ),
           if (canIncrease)
-            GestureDetector(
-              onTap: onIncrease,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFF00FFFF).withOpacity(0.5)),
-                  borderRadius: BorderRadius.circular(4),
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: GestureDetector(
+                onTap: onIncrease,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFF00FFFF).withOpacity(0.5)),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(Icons.add, color: Color(0xFF00FFFF), size: 16),
                 ),
-                child: const Icon(Icons.add, color: Color(0xFF00FFFF), size: 16),
               ),
             ),
         ],
