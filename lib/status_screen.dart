@@ -1,795 +1,494 @@
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'dart:math' as math;
 import 'package:provider/provider.dart';
-import 'dart:async';
-import 'models/core_quest.dart';
-import 'services/hive_service.dart';
-import 'engine/core_engine.dart';
-import 'engine/dynamic_engine.dart';
 import 'player_provider.dart';
-import 'widgets/system_overlay.dart';
-import 'widgets/xp_floating_text.dart';
-import 'ui/widgets/widgets.dart';
 import 'ui/theme/app_text_styles.dart';
+import 'ui/theme/app_colors.dart';
+import 'ui/widgets/widgets.dart';
 
-class StatusScreen extends StatefulWidget {
+class StatusScreen extends StatelessWidget {
   const StatusScreen({super.key});
 
   @override
-  State<StatusScreen> createState() => _StatusScreenState();
-}
+  Widget build(BuildContext context) {
+    final player = Provider.of<PlayerProvider>(context);
+    final isDebt = player.walletXP < 0;
 
-class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
 
-  int? _lastLevel;
-  String? _lastRank;
-  bool? _lastPenalty;
-  bool _isProcessing = false;
+            /// 🔥 QUEST INFO PANEL
+            HolographicPanel(
+              header: const SystemHeaderBar(label: 'QUEST INFO'),
+              emphasize: true,
+              child: _buildQuestUI(context, player),
+            ),
 
-  Timer? _midnightTimer;
-  Duration _timeLeft = Duration.zero;
-  DateTime _nextMidnight = DateTime.now();
+            /// ⚔️ SOLO LEVELING STATUS WINDOW
+            HolographicPanel(
+              header: const SystemHeaderBar(label: 'STATUS'),
+              emphasize: true,
+              child: _buildStatusWindow(player),
+            ),
 
-  @override
-  void initState() {
-    super.initState();
-    final coreBox = HiveService.coreQuests;
-    final settings = HiveService.settings;
-    final engine = CoreEngine(coreBox, settings);
-    engine.checkAndEvaluateNewDay();
+            HolographicPanel(
+              header: const SystemHeaderBar(label: 'WALLET XP ECONOMY'),
+              child: _buildEconomyTerminal(player, isDebt),
+            ),
 
-    final dynamicEngine = DynamicEngine();
-    dynamicEngine.assignTodayDungeon();
-
-    _nextMidnight = _getNextMidnight();
-    _startMidnightTimer();
-
-    _pulseController = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(_pulseController);
-  }
-
-  @override
-  void dispose() {
-    _midnightTimer?.cancel();
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  DateTime _getNextMidnight() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day + 1);
-  }
-
-  void _startMidnightTimer() {
-    _midnightTimer?.cancel();
-    _updateTimeLeft();
-    _midnightTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) return;
-      
-      final now = DateTime.now();
-      if (now.isAfter(_nextMidnight)) {
-        _nextMidnight = _getNextMidnight();
-      }
-      
-      _updateTimeLeft();
-    });
-  }
-
-  void _updateTimeLeft() {
-    setState(() {
-      _timeLeft = _nextMidnight.difference(DateTime.now());
-      if (_timeLeft.isNegative) {
-        _timeLeft = Duration.zero;
-      }
-    });
-  }
-
-  String _formatDuration(Duration d) {
-    final h = d.inHours;
-    final m = (d.inMinutes % 60);
-    final s = (d.inSeconds % 60);
-    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
-
-  void _checkTriggers(
-      BuildContext context, int level, String rank, bool penalty) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final player = Provider.of<PlayerProvider>(context, listen: false);
-      
-      if (_lastLevel != null && level > _lastLevel!) {
-        SystemOverlay.show(
-          context,
-          title: "SYSTEM EVOLUTION",
-          message: "Level Up\nLevel $level",
-          playerName: player.name,
-        );
-      }
-      if (_lastRank != null && rank != _lastRank) {
-        SystemOverlay.show(
-          context,
-          title: "RANK ADVANCEMENT",
-          message: "New Rank Obtained\n$rank Rank",
-          playerName: player.name,
-        );
-      }
-      if (_lastPenalty != null && penalty && !_lastPenalty!) {
-        if (player.ironActive) {
-          final settings = HiveService.settings;
-          final coreBox = HiveService.coreQuests;
-          final engine = CoreEngine(coreBox, settings);
-          engine.clearPenalty();
-          player.consumeIron(); 
-          
-          SystemOverlay.show(
-            context,
-            title: "IRON RESOLVE",
-            message: "Penalty Blocked\nAbility Expended",
-            playerName: player.name,
-          );
-        } else {
-          SystemOverlay.show(
-            context,
-            title: "SYSTEM PENALTY",
-            message: "Penalty Activated\nTraining Failure",
-            playerName: player.name,
-          );
-        }
-      }
-
-      _checkNewUnlocks(context, player);
-
-      _lastLevel = level;
-      _lastRank = rank;
-      _lastPenalty = penalty;
-    });
-  }
-
-  void _checkNewUnlocks(BuildContext context, PlayerProvider player) {
-    if (player.flowUnlocked && !player.hasNotifiedFlow) {
-      _showUnlock(context, "FLOW STATE", player);
-      player.setNotified("FLOW STATE");
-    }
-    if (player.enduranceUnlocked && !player.hasNotifiedEndurance) {
-      _showUnlock(context, "ENDURANCE BURST", player);
-      player.setNotified("ENDURANCE BURST");
-    }
-    if (player.insightUnlocked && !player.hasNotifiedInsight) {
-      _showUnlock(context, "TACTICAL INSIGHT", player);
-      player.setNotified("TACTICAL INSIGHT");
-    }
-    if (player.ironUnlocked && !player.hasNotifiedIron) {
-      _showUnlock(context, "IRON RESOLVE", player);
-      player.setNotified("IRON RESOLVE");
-    }
-  }
-
-  void _showUnlock(BuildContext context, String name, PlayerProvider player) {
-    SystemOverlay.show(
-      context,
-      title: "NEW ABILITY UNLOCKED",
-      message: name,
-      playerName: player.name,
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final coreBox = HiveService.coreQuests;
-    final settings = HiveService.settings;
+  // ============================================================
+  //  SOLO LEVELING STATUS WINDOW
+  // ============================================================
+  Widget _buildStatusWindow(PlayerProvider player) {
+    final job = _jobLabel(player.rank);
+    final title = _titleLabel(player.level);
 
-    return ValueListenableBuilder(
-      valueListenable: coreBox.listenable(),
-      builder: (context, Box<CoreQuest> box, _) {
-        final engine = CoreEngine(box, settings);
-        final player = Provider.of<PlayerProvider>(context);
+    // XP progress to next level
+    // Formula: level = floor(sqrt(totalXP) / 10) + 1
+    // currentThreshold = ((level-1)*10)^2
+    // nextThreshold    = (level*10)^2
+    final currentThreshold = math.pow((player.level - 1) * 10, 2).toInt();
+    final nextThreshold = math.pow(player.level * 10, 2).toInt();
+    final xpRange = (nextThreshold - currentThreshold).clamp(1, 999999999);
+    final xpInLevel = (player.totalXP - currentThreshold).clamp(0, xpRange);
+    final xpProgress = (xpInLevel / xpRange).clamp(0.0, 1.0);
 
-        // Update Triggers
-        _checkTriggers(
-            context, player.level, player.rank, engine.penaltyActive);
+    final hpProgress = player.maxHp > 0
+        ? (player.hp / player.maxHp).clamp(0.0, 1.0)
+        : 1.0;
 
-        bool allCleared = box.values.isNotEmpty && box.values.every((q) => q.completed);
-
-        return SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
+    return Column(
+      children: [
+        // ── Level + JOB/TITLE row ──────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              HolographicPanel(
-                header: const SystemHeaderBar(label: 'QUEST INFO'),
-                emphasize: true,
+              // Big level number
+              Text(
+                '${player.level}',
+                style: const TextStyle(
+                  fontFamily: 'Roboto',
+                  fontSize: 64,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  height: 1.0,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                  'LEVEL',
+                  style: AppTextStyles.systemLabel.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 10,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 24),
+              // JOB / TITLE column
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildHeader(player, engine.streak),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Primary directives must be cleared before midnight.',
-                      style: AppTextStyles.bodySecondary,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildCountdownTracker(allCleared),
+                    _JobTitleLine(label: 'JOB', value: job),
+                    const SizedBox(height: 4),
+                    _JobTitleLine(label: 'TITLE', value: title),
                   ],
                 ),
-              ),
-              HolographicPanel(
-                header: const SystemHeaderBar(label: 'PRIMARY DIRECTIVES'),
-                child: Column(
-                  children: [
-                    ...box.values.map(
-                      (quest) =>
-                          _buildQuestCard(quest, player, engine, context),
-                    ),
-                  ],
-                ),
-              ),
-              HolographicPanel(
-                header: const SystemHeaderBar(label: 'SYSTEM STATUS'),
-                child:
-                    _buildFooter(player, engine.penaltyActive, engine.streak),
               ),
             ],
           ),
+        ),
+
+        // ── HP / XP bars ───────────────────────────────────────
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+          ),
+          child: Column(
+            children: [
+              _StatBar(
+                label: 'HP',
+                progress: hpProgress,
+                color: AppColors.success,
+                valueText: '${player.hp} / ${player.maxHp}',
+              ),
+              const SizedBox(height: 10),
+              _StatBar(
+                label: 'XP',
+                progress: xpProgress,
+                color: AppColors.primaryBlue,
+                valueText: '$xpInLevel / $xpRange',
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // ── STR / VIT / AGI / INT / PER ───────────────────────
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  _StatEntry(label: 'STR', value: player.Strength),
+                  const SizedBox(width: 40),
+                  _StatEntry(label: 'VIT', value: player.Vitality),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  _StatEntry(label: 'AGI', value: player.Agility),
+                  const SizedBox(width: 40),
+                  _StatEntry(label: 'INT', value: player.Intelligence),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  _StatEntry(label: 'PER', value: player.Perception),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _jobLabel(String rank) {
+    switch (rank) {
+      case 'E': return 'NONE';
+      case 'D': return 'APPRENTICE';
+      case 'C': return 'HUNTER';
+      case 'B': return 'ELITE HUNTER';
+      case 'A': return 'MASTER';
+      case 'S': return 'SHADOW MONARCH';
+      case 'GOD': return 'THE ABSOLUTE';
+      default:   return 'NONE';
+    }
+  }
+
+  String _titleLabel(int level) {
+    if (level >= 50) return 'MONARCH';
+    if (level >= 26) return 'SOVEREIGN';
+    if (level >= 11) return 'AWAKENED';
+    return 'NONE';
+  }
+
+  // ============================================================
+  //  QUEST UI
+  // ============================================================
+  Widget _buildQuestUI(BuildContext context, PlayerProvider player) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const SizedBox(height: 8),
+
+        Text(
+          "Daily Quest: Strength Training has received.",
+          textAlign: TextAlign.center,
+          style: AppTextStyles.bodyPrimary.copyWith(fontSize: 14),
+        ),
+
+        const SizedBox(height: 20),
+
+        Text(
+          "GOAL",
+          style: AppTextStyles.headerMedium.copyWith(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2,
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        _questRow(context, "Push-ups", player.pushUps, 100),
+        _questRow(context, "Sit-ups", player.sitUps, 100),
+        _questRow(context, "Squats", player.squatsCount, 100),
+        _questRow(context, "Running", player.running, 10),
+
+        const SizedBox(height: 24),
+
+        RichText(
+          textAlign: TextAlign.center,
+          text: TextSpan(
+            style: AppTextStyles.bodyPrimary,
+            children: [
+              const TextSpan(
+                text: "WARNING: Failure to fulfill quest will result in an appropriate ",
+              ),
+              TextSpan(
+                text: "penalty",
+                style: TextStyle(color: AppColors.danger),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 24),
+
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.white70, width: 2),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: const Icon(Icons.check, color: Colors.greenAccent, size: 24),
+        ),
+      ],
+    );
+  }
+
+  Widget _questRow(BuildContext context, String label, int current, int max) {
+    return GestureDetector(
+      onTap: () => _logReps(context, label),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: AppTextStyles.bodyPrimary.copyWith(fontSize: 16)),
+            Text(
+              "[$current/$max]",
+              style: AppTextStyles.bodyPrimary.copyWith(fontSize: 16),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _logReps(BuildContext context, String type) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        int value = 10;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text("Log $type", style: AppTextStyles.headerMedium),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: () =>
+                            setState(() => value = (value - 5).clamp(0, 100)),
+                        icon: const Icon(Icons.remove),
+                      ),
+                      Text("$value", style: const TextStyle(fontSize: 24)),
+                      IconButton(
+                        onPressed: () => setState(() => value += 5),
+                        icon: const Icon(Icons.add),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () {
+                      Provider.of<PlayerProvider>(context, listen: false)
+                          .addReps(type, value);
+                      Navigator.pop(context);
+                    },
+                    child: const Text("CONFIRM"),
+                  ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  Widget _buildCountdownTracker(bool allCleared) {
-    if (allCleared) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        decoration: BoxDecoration(
-          color: Colors.cyanAccent.withOpacity(0.1),
-          border: Border.all(color: Colors.cyanAccent.withOpacity(0.5)),
-        ),
-        child: Column(
-          children: const [
-            Text(
-              "[DIRECTIVES CLEARED]",
-              style: TextStyle(
-                color: Colors.cyanAccent,
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2,
-              ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              "AWAITING NEXT CYCLE",
-              style: TextStyle(
-                color: Colors.white54,
-                fontSize: 10,
-                letterSpacing: 2,
-              ),
-            ),
-          ],
-        ),
-      );
-    } else {
-      double progress = _timeLeft.inSeconds / 86400.0;
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        decoration: BoxDecoration(
-          color: Colors.redAccent.withOpacity(0.05),
-          border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.timer, color: Colors.redAccent, size: 16),
-                const SizedBox(width: 8),
-                const Text(
-                  "TIME REMAINING:",
-                  style: TextStyle(
-                    color: Colors.redAccent,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      _formatDuration(_timeLeft),
-                      style: const TextStyle(
-                        color: Colors.redAccent,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: progress.clamp(0.0, 1.0),
-                minHeight: 4,
-                backgroundColor: Colors.white10,
-                valueColor: const AlwaysStoppedAnimation(Colors.redAccent),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              "[FAILURE RESULTS IN PENALTY]",
-              style: TextStyle(
-                color: Colors.redAccent.withOpacity(0.7),
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
-  Widget _buildHeader(PlayerProvider player, int streak) {
-    // Calculate Day Count
-    if (player.awakeningDate.isNotEmpty) {
-      try {
-        DateTime.parse(player.awakeningDate);
-      } catch (_) {}
-    }
-
+  Widget _buildEconomyTerminal(PlayerProvider player, bool isDebt) {
+    final walletColor = isDebt ? AppColors.danger : Colors.amber;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "HUNTER PROFILE",
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: const Text(
-                      "DAILY DIRECTIVE",
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.cyanAccent,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        fontStyle: FontStyle.italic,
-                        letterSpacing: 2.0,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 16),
-            _buildRankBadge(player.rank),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildWeeklyStreakRow(player.streakDays),
-        const SizedBox(height: 12),
-        if (player.isRestricted)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              '[STATUS: DEBT ACTIVE — WALLET ${player.walletXP} XP]',
-              style: const TextStyle(
-                color: Colors.redAccent,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
-        const SizedBox(height: 16),
-        Container(
-          height: 1,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.cyanAccent.withOpacity(0.5),
-                Colors.cyanAccent.withOpacity(0.0),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRankBadge(String rank) {
-    Color rankColor;
-    switch (rank) {
-      case 'S': rankColor = Colors.purpleAccent; break;
-      case 'A': rankColor = Colors.redAccent; break;
-      case 'B': rankColor = Colors.orangeAccent; break;
-      case 'C': rankColor = Colors.greenAccent; break;
-      case 'D': rankColor = Colors.cyanAccent; break;
-      default: rankColor = Colors.grey;
-    }
-
-    return Container(
-      width: 46,
-      height: 46,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: rankColor, width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: rankColor.withOpacity(0.2),
-            blurRadius: 10,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
-      child: Center(
-        child: Text(
-          rank,
-          style: TextStyle(
-            color: rankColor,
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuestCard(CoreQuest quest, PlayerProvider player,
-      CoreEngine engine, BuildContext context) {
-    final bool isCompleted = quest.completed;
-    
-    // Potential XP (Base + Current Bonuses)
-    int baseXP = 10;
-    int displayXP = baseXP;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.8),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: isCompleted 
-              ? Colors.white10 
-              : Colors.cyanAccent.withOpacity(0.3),
-          width: 1.5,
-        ),
-        boxShadow: isCompleted ? [] : [
-          BoxShadow(
-            color: const Color(0xFF00E5FF).withOpacity(0.5),
-            blurRadius: 15,
-            offset: const Offset(0, 4),
-          )
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    quest.name.toUpperCase(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isCompleted ? Colors.white24 : Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    "+$displayXP XP",
-                    textAlign: TextAlign.end,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isCompleted ? Colors.white10 : Colors.amberAccent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isCompleted ? "STATE: CLEARED" : "STATE: PENDING",
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: isCompleted ? Colors.greenAccent : Colors.grey,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                if (!isCompleted)
-                  Flexible(
-                    child: Transform(
-                      transform: Matrix4.skewX(-0.15),
-                      child: SizedBox(
-                        height: 28,
-                        child: ElevatedButton(
-                          onPressed: _isProcessing
-                              ? null
-                              : () => _handleComplete(quest, player, engine, context),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.cyanAccent.withOpacity(0.1),
-                            side: const BorderSide(color: Colors.cyanAccent, width: 1),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(1),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                          ),
-                          child: Transform(
-                            transform: Matrix4.skewX(0.15),
-                            child: const Text(
-                              "EXECUTE",
-                              style: TextStyle(
-                                color: Colors.cyanAccent,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  const Padding(
-                    padding: EdgeInsets.only(right: 4),
-                    child: Icon(Icons.check_circle_outline, color: Colors.white10, size: 20),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _handleComplete(CoreQuest quest, PlayerProvider player,
-      CoreEngine engine, BuildContext context) async {
-    setState(() => _isProcessing = true);
-    try {
-      await engine.completeQuest(quest);
-
-      int baseXP = 10;
-      int abilityBonus = 0;
-      bool consumed = false;
-
-      if (quest.id == 'deep_work' && player.flowActive) {
-        abilityBonus += baseXP;
-        player.consumeFlow();
-        consumed = true;
-      }
-
-      if (quest.id == 'strength' && player.enduranceActive) {
-        abilityBonus += 5;
-        player.consumeEndurance();
-        consumed = true;
-      }
-
-      if (consumed) {
-        SystemOverlay.show(
-          context,
-          title: "ABILITY TRIGGERED",
-          message: "Special Bonus Applied",
-          playerName: player.name,
-        );
-      }
-
-      int totalBaseXP = baseXP + abilityBonus;
-
-      // V2.1: default to <60 min since core quests typically short — caller can't log time
-      // Using addTimedXP with 30 min (1.0x) so daily cap logic still applies
-      player.addTimedXP(totalBaseXP, 30);
-      player.setDailyQuestCleared();
-
-      XPFloatingText.show(context, amount: totalBaseXP);
-    } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
-    }
-  }
-
-  Widget _buildFooter(PlayerProvider player, bool penaltyActive, int streak) {
-    String activeAbility = "NONE";
-    if (player.flowActive) activeAbility = "FLOW STATE";
-    else if (player.enduranceActive) activeAbility = "ENDURANCE BURST";
-    else if (player.insightActive) activeAbility = "TACTICAL INSIGHT";
-    else if (player.ironActive) activeAbility = "IRON RESOLVE";
-
-    bool showStats = activeAbility != "NONE" || player.availablePoints > 0;
-
-    return Container(
-      padding: const EdgeInsets.only(top: 20, bottom: 10),
-      child: Column(
-        children: [
-          Container(
-            height: 1,
-            width: double.infinity,
-            color: Colors.white.withOpacity(0.05),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _footerItem('WALLET', '${player.walletXP} XP',
-                    player.isRestricted ? Colors.redAccent : Colors.amberAccent),
-              ),
-              Expanded(
-                child: _footerItem('MISSES',
-                    '${player.consecutiveMisses}/3',
-                    player.consecutiveMisses > 0 ? Colors.redAccent : Colors.white24),
-              ),
-              Expanded(
-                child: _footerItem('RANK STATUS',
-                    penaltyActive ? 'PENALTY' : (player.isRestricted ? 'DEBT' : 'NORMAL'),
-                    penaltyActive || player.isRestricted ? Colors.redAccent : Colors.cyanAccent),
-              ),
-            ],
-          ),
-          if (showStats) ...[
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _footerItem('ABILITY STATE', activeAbility,
-                      activeAbility == 'NONE' ? Colors.white38 : Colors.purpleAccent),
-                ),
-                Expanded(
-                  child: _footerItem('ATTR POINTS', '${player.availablePoints}', Colors.amberAccent),
-                ),
-              ],
-            ),
-          ]
-        ],
-      ),
-    );
-  }
-
-  Widget _footerItem(String label, String value, Color valueColor) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
         Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.2),
-            fontSize: 9,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1,
+          "${player.walletXP} XP",
+          style: AppTextStyles.headerLarge.copyWith(
+            color: walletColor,
+            fontSize: 28,
+            fontWeight: FontWeight.w900,
           ),
         ),
         const SizedBox(height: 4),
         Text(
-          value,
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-          style: TextStyle(
-            color: valueColor,
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
+          isDebt ? "DEBT PROTOCOL ACTIVE" : "SYSTEM BALANCE STABLE",
+          style: AppTextStyles.systemLabel.copyWith(
+            color: walletColor.withOpacity(0.7),
+            fontSize: 10,
           ),
         ),
       ],
     );
   }
+}
 
-  Widget _buildWeeklyStreakRow(int streakDays) {
-    final now = DateTime.now();
-    final todayWeekday = now.weekday; // 1 = Mon, 7 = Sun
-    final days = ["M", "T", "W", "T", "F", "S", "S"];
+// ============================================================
+//  SUB-WIDGETS
+// ============================================================
 
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: List.generate(7, (index) {
-          final dayIndex = index + 1;
-          Color color;
-          double opacity = 1.0;
-          bool isToday = dayIndex == todayWeekday;
-          
-          // Mocking previous days based on total streak
-          // If streakDays >= (today's distance from target day), mark green
-          if (dayIndex < todayWeekday) {
-             bool cleared = streakDays >= (todayWeekday - dayIndex);
-             color = cleared ? Colors.greenAccent : Colors.redAccent;
-          } else if (isToday) {
-             color = Colors.cyanAccent;
-          } else {
-             color = Colors.white10;
-             opacity = 0.3;
-          }
+class _JobTitleLine extends StatelessWidget {
+  final String label;
+  final String value;
+  const _JobTitleLine({required this.label, required this.value});
 
-          return Padding(
-            padding: EdgeInsets.only(right: index == 6 ? 0 : 8),
-            child: Column(
-              children: [
-                AnimatedBuilder(
-                  animation: _pulseAnimation,
-                  builder: (context, child) {
-                    return Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isToday ? color.withOpacity(0.1 * _pulseAnimation.value) : color.withOpacity(0.1),
-                        border: Border.all(
-                          color: isToday ? color.withOpacity(_pulseAnimation.value) : color.withOpacity(opacity),
-                          width: isToday ? 2 : 1,
-                        ),
-                        boxShadow: isToday ? [
-                          BoxShadow(
-                            color: color.withOpacity(0.3 * _pulseAnimation.value),
-                            blurRadius: 8,
-                          )
-                        ] : [],
-                      ),
-                      child: Center(
-                        child: Text(
-                          days[index],
-                          style: TextStyle(
-                            color: color.withOpacity(isToday ? 1.0 : (dayIndex < todayWeekday ? 0.8 : 0.3)),
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: TextSpan(
+        style: AppTextStyles.bodySecondary.copyWith(fontSize: 13, letterSpacing: 0.5),
+        children: [
+          TextSpan(
+            text: '$label: ',
+            style: const TextStyle(color: Color(0xFF9FA7CC)),
+          ),
+          TextSpan(
+            text: value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
             ),
-          );
-        }),
+          ),
+        ],
       ),
     );
   }
 }
 
+class _StatBar extends StatelessWidget {
+  final String label;
+  final double progress;
+  final Color color;
+  final String valueText;
+  const _StatBar({
+    required this.label,
+    required this.progress,
+    required this.color,
+    required this.valueText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 28,
+          child: Text(
+            label,
+            style: AppTextStyles.systemLabel.copyWith(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: Stack(
+              children: [
+                Container(height: 10, color: color.withOpacity(0.12)),
+                FractionallySizedBox(
+                  widthFactor: progress,
+                  child: Container(
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.85),
+                      boxShadow: [
+                        BoxShadow(color: color.withOpacity(0.45), blurRadius: 6),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          valueText,
+          style: AppTextStyles.systemLabel.copyWith(
+            color: color.withOpacity(0.75),
+            fontSize: 8,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatEntry extends StatelessWidget {
+  final String label;
+  final int value;
+  const _StatEntry({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(
+          '$label: ',
+          style: AppTextStyles.systemLabel.copyWith(
+            color: AppColors.textSecondary,
+            fontSize: 12,
+            letterSpacing: 1.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Text(
+          value.toString(),
+          style: const TextStyle(
+            fontFamily: 'Roboto',
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            letterSpacing: 0,
+          ),
+        ),
+      ],
+    );
+  }
+}

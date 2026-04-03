@@ -68,19 +68,35 @@ class _AwakeningScreenState extends State<AwakeningScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Image.asset(
-                      'assets/icons/app_icon.png',
-                      height: 64,
+                ClipRect(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: Image.asset(
+                            'assets/icons/app_icon.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'You have Awakened.',
+                            maxLines: 2,
+                            softWrap: true,
+                            style: AppTextStyles.headerMedium.copyWith(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'You have Awakened.',
-                      style: AppTextStyles.headerMedium,
-                    ),
-                  ],
+                  ),
                 ),
                 const SizedBox(height: 24),
                 Text(

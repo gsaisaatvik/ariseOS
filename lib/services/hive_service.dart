@@ -4,6 +4,7 @@ import '../models/subject.dart';
 import '../models/dungeon.dart';
 import '../models/core_quest.dart';
 import '../models/dungeon_template.dart';
+import '../system/directive_config.dart';
 
 class HiveService {
   static const String subjectsBox = 'subjects';
@@ -12,6 +13,7 @@ class HiveService {
   static const String coreQuestsBox = 'core_quests';
   static const String dungeonTemplatesBox = 'dungeon_templates';
   static const String dynamicStateBox = 'dynamic_state';
+  static const String monarchStateBox = 'monarch_state';
 
   static Future<void> init() async {
     await Hive.initFlutter();
@@ -45,6 +47,7 @@ class HiveService {
             dungeonTemplatesBox);
 
     await Hive.openBox(dynamicStateBox);
+    await Hive.openBox(monarchStateBox);
 
     /// 🔥 SEED SUBJECTS
     if (subjects.isEmpty) {
@@ -70,22 +73,22 @@ class HiveService {
       ]);
     }
 
-    /// 🔥 SEED CORE QUESTS
+    /// 🔥 SEED CORE QUESTS (Phase 1 — three directives only)
     if (coreQuests.isEmpty) {
       await coreQuests.addAll([
         CoreQuest(
           id: 'strength',
-          name: 'Strength Training',
+          name: 'Strength / Physical',
           date: DateTime.now(),
         ),
         CoreQuest(
           id: 'deep_work',
-          name: '90 Min Deep Work',
+          name: 'Deep Work (90 min)',
           date: DateTime.now(),
         ),
         CoreQuest(
-          id: 'dsa',
-          name: '2 DSA Problems',
+          id: 'skill',
+          name: 'Skill (DSA / Study)',
           date: DateTime.now(),
         ),
       ]);
@@ -166,4 +169,11 @@ class HiveService {
 
   static Box get dynamicState =>
       Hive.box(dynamicStateBox);
+
+  static Box get monarchState =>
+      Hive.box(monarchStateBox);
+
+  static Future<void> clearActiveDirective() async {
+    settings.put(DirectiveConfig.hiveLockKey, '');
+  }
 }

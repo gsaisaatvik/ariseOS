@@ -37,8 +37,8 @@ class HolographicPanel extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              AppColors.surfaceElevated.withOpacity(0.96),
-              AppColors.surface.withOpacity(0.94),
+              AppColors.surfaceElevated.withValues(alpha: 0.96),
+              AppColors.surface.withValues(alpha: 0.94),
             ],
           ),
           border: Border.all(
@@ -48,7 +48,7 @@ class HolographicPanel extends StatelessWidget {
           boxShadow: [
             if (emphasize)
               BoxShadow(
-                color: AppColors.primaryBlue.withOpacity(0.35),
+                color: AppColors.primaryBlue.withValues(alpha: 0.35),
                 blurRadius: 22,
                 spreadRadius: 1,
               ),

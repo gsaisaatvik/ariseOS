@@ -4,9 +4,17 @@ import '../ui/theme/app_colors.dart';
 import '../ui/theme/app_text_styles.dart';
 
 class XPFloatingText {
-  static void show(BuildContext context, {required int amount, Offset? position}) {
+  static void show(
+    BuildContext context, {
+    required int amount,
+    Offset? position,
+    bool isPenalty = false,
+  }) {
     OverlayState? overlayState = Overlay.of(context);
     late OverlayEntry overlayEntry;
+
+    final penalty = isPenalty || amount < 0;
+    final signedAbsAmount = amount.abs();
 
     // Default to center if no position provided
     final showPosition = position ?? Offset(
@@ -16,8 +24,9 @@ class XPFloatingText {
 
     overlayEntry = OverlayEntry(
       builder: (context) => _XPFloatingWidget(
-        amount: amount,
+        amount: signedAbsAmount,
         position: showPosition,
+        isPenalty: penalty,
         onDismiss: () => overlayEntry.remove(),
       ),
     );
@@ -29,11 +38,13 @@ class XPFloatingText {
 class _XPFloatingWidget extends StatefulWidget {
   final int amount;
   final Offset position;
+  final bool isPenalty;
   final VoidCallback onDismiss;
 
   const _XPFloatingWidget({
     required this.amount,
     required this.position,
+    required this.isPenalty,
     required this.onDismiss,
   });
 
@@ -99,18 +110,23 @@ class _XPFloatingWidgetState extends State<_XPFloatingWidget>
               width: 100,
               alignment: Alignment.center,
               child: Text(
-                "+${widget.amount} XP",
+                widget.isPenalty ? "-${widget.amount} XP" : "+${widget.amount} XP",
                 style: AppTextStyles.headerMedium.copyWith(
                   fontSize: 20,
-                  color: AppColors.primaryBlue,
+                  color: widget.isPenalty ? Colors.redAccent : AppColors.primaryBlue,
                   shadows: [
                     Shadow(
-                      color: AppColors.primaryBlue.withOpacity(0.75),
-                      blurRadius: 14,
+                      color: (widget.isPenalty
+                              ? Colors.redAccent
+                              : AppColors.primaryBlue)
+                          .withValues(alpha: 0.75),
+                      blurRadius: widget.isPenalty ? 16 : 14,
                     ),
                     Shadow(
-                      color: AppColors.primaryViolet.withOpacity(0.35),
-                      blurRadius: 18,
+                      color: widget.isPenalty
+                          ? Colors.redAccent.withValues(alpha: 0.35)
+                          : AppColors.primaryViolet.withValues(alpha: 0.35),
+                      blurRadius: widget.isPenalty ? 20 : 18,
                     ),
                     const Shadow(
                       color: Colors.black,

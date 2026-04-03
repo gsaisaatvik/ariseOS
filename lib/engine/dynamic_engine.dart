@@ -69,14 +69,16 @@ class DynamicEngine {
     // Ensure we only act on a pending dungeon
     if (status != 'pending') return;
 
+    final player = Provider.of<PlayerProvider>(context, listen: false);
+
     // LOCK FIRST – mark as completed before any XP is granted
     await stateBox.put('status', 'completed');
 
-    // If a penalty is active, abort XP reward
-    if (settings.get('penaltyActive', defaultValue: false)) return;
+    // Phase 1.5: Use PlayerProvider.isRestricted as single source of truth
+    if (player.isRestricted) return;
 
     // Grant XP via PlayerProvider
-    Provider.of<PlayerProvider>(context, listen: false).addXP(15);
+    player.addXP(15);
   }
 
   Future<void> failDungeon() async {

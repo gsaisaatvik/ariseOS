@@ -1,7 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'player_provider.dart';
-import 'engine/dungeon_engine.dart';
 import 'awakening_screen.dart';
 import 'ui/widgets/widgets.dart';
 import 'ui/theme/app_text_styles.dart';
@@ -17,11 +14,7 @@ class _NotificationSequenceState extends State<NotificationSequence> {
   final List<String> _notifications = [
     '! NOTIFICATION The Secret Quest: Courage of the Weak.',
     '! NOTIFICATION You have acquired the qualifications to be a Player. Will you accept?',
-    '! NOTIFICATION Your heart will stop in 0.02 seconds if you choose not to accept. Will you accept?',
     '! NOTIFICATION Congratulations on becoming a Player.',
-    'NOTIFICATION You have unread messages.',
-    '! NOTIFICATION Failure to comply with the system may result in a penalty.',
-    'NOTIFICATION This system is designed to assist the development of the Player.',
   ];
 
   int _index = 0;
@@ -29,17 +22,6 @@ class _NotificationSequenceState extends State<NotificationSequence> {
   @override
   void initState() {
     super.initState();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final playerProvider =
-          Provider.of<PlayerProvider>(context, listen: false);
-
-      // 🔥 PASS PROVIDER DIRECTLY
-      final engine = DungeonEngine(playerProvider);
-
-      await engine.generateOrFetchToday();
-    });
-
     _maybeAdvance();
   }
 

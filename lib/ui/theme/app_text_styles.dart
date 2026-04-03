@@ -43,6 +43,18 @@ class AppTextStyles {
     color: AppColors.textPrimary,
   );
 
+  /// Primary body copy (alias for consistency).
+  static const TextStyle bodyPrimary = body;
+
+  /// Small headers.
+  static const TextStyle headerSmall = TextStyle(
+    fontFamily: _fontFamily,
+    fontSize: 14,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 3,
+    color: AppColors.textPrimary,
+  );
+
   /// Secondary / explanatory text.
   static const TextStyle bodySecondary = TextStyle(
     fontFamily: _fontFamily,

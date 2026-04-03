@@ -32,5 +32,11 @@ class AppColors {
 
   // Utility
   static const Color overlayDim = Colors.black87;
+
+  // Monarch Integration (Solo Leveling theme)
+  static const Color monarchBackground = Color(0xFF000000); // True Black
+  static const Color penaltyBackground = Color(0xFF1A0000); // Deep Red
+  static const Color cyanGlow = Color(0xFF00FFFF); // Cyan border/glow
+  static const Color cyanGlowDim = Color(0x4400FFFF); // Dim cyan for shadows
 }
 

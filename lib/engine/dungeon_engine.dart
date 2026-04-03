@@ -29,8 +29,8 @@ class DungeonEngine {
 
     final subject = (subjectsBox.values.toList()..shuffle()).first;
 
-    final difficulty = subject.baseDifficulty *
-        (1 + subject.scalingFactor * _player.penaltyDebt);
+    // Phase 1.5: penaltyDebt removed. Use fixed base difficulty.
+    final difficulty = subject.baseDifficulty;
 
     final xpReward = difficulty * 10;
 
@@ -51,13 +51,13 @@ class DungeonEngine {
     dungeon.completed = true;
     await dungeon.save();
     _player.addXP(dungeon.xpReward.toInt());
-    _player.decreasePenalty();
+    // Phase 1.5: penalty management handled by PlayerProvider, not dungeon completions
   }
 
   /// Marks the dungeon as failed and increases penalty.
   Future<void> failDungeon(Dungeon dungeon) async {
     dungeon.completed = false;
     await dungeon.save();
-    _player.increasePenalty();
+    // Phase 1.5: penalty management handled by PlayerProvider, not dungeon failures
   }
 }
