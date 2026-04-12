@@ -1,18 +1,28 @@
 import 'package:flutter/foundation.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'services/hive_service.dart';
 import 'system/directive_config.dart';
 import 'system/attribute_effects.dart';
 import 'system/level_up_event.dart';
+import 'system/rank_up_event.dart';
 import 'system/system_abilities.dart';
 import 'system/adaptive_directive_engine.dart';
 import 'system/rank_engine.dart';
 import 'system/health_system.dart';
 import 'system/xp_economy_engine.dart';
 import 'system/skill_definitions.dart';
+import 'system/mana_crystal_engine.dart';
+import 'system/daily_quest_engine.dart';
 import 'models/physical_foundation.dart';
 import 'models/monarch_rewards.dart';
+import 'models/redemption_item.dart';
+import 'models/hunter_profile.dart';
+import 'models/daily_quest.dart';
+import 'models/custom_quest.dart';
+import 'models/chronicle_entry.dart';
+import 'models/premium_tier.dart';
 
 
 // ============================================================
@@ -91,11 +101,56 @@ class PlayerProvider extends ChangeNotifier {
   // Penalty log for UI
   final List<String> _penaltyLog = [];
 
+  // Side quest state (resets each day)
+  final List<bool> _sideQuestsCompleted = [false, false, false];
+  String _sideQuestDate = '';
+
+  // ── NEW: Hunter Profile ────────────────────────────────────
+  HunterProfile? _profile;
+
+  // ── NEW: Premium Tier ──────────────────────────────────────
+  PremiumTier _tier = PremiumTier.free;
+
+  // ── NEW: Daily Quest Engine ────────────────────────────────
+  List<DailyQuest> _dailyQuests = [];
+  String _dailyQuestEngineDate = '';
+
+  // ── NEW: Custom Quests (premium) ───────────────────────────
+  List<CustomQuest> _customQuests = [];
+
+  // ── NEW: Shadow Chronicle ──────────────────────────────────
+  List<ChronicleEntry> _chronicle = [];
+
+  // ── NEW: Performance counters ──────────────────────────────
+  int _totalQuestsCompleted = 0;
+  int _totalQuestsFailed = 0;
+
+  // ── NEW: Pending penalty dungeon challenges ─────────────────
+  bool _hasPendingPenaltyDungeon = false;
+
   // ============================================================
   // Level-up moment system (full-screen dopamine anchor)
   // ============================================================
   final List<LevelUpEvent> _levelUpQueue = [];
   int _lastEnqueuedLevelTo = -1;
+
+  // ============================================================
+  // Rank-up moment system
+  // ============================================================
+  final List<RankUpEvent> _rankUpQueue = [];
+  String _lastKnownRank = 'E';
+
+  // ============================================================
+  // Mana Crystal Economy
+  // ============================================================
+  int _manaCrystals = 0;
+  int _lastStreakCrystalMilestone = 0;
+  int _totalTechnicalCompletions = 0;
+
+  // ============================================================
+  // Active Item Effects (Rewards Terminal)
+  // ============================================================
+  String _activeItemEffect = '';
 
   // ============================================================
   // Midnight Timer for Monarch Integration
@@ -160,6 +215,9 @@ class PlayerProvider extends ChangeNotifier {
 
   // Penalty Zone state
   bool _inPenaltyZone = false;
+
+  // Physical quest day-reward guard (once-per-day STR award)
+  bool _physicalStatAwarded = false;
   DateTime? _penaltyActivatedAt;
 
   // Limiter Removal state
@@ -309,7 +367,9 @@ class PlayerProvider extends ChangeNotifier {
     _questProgress['Squats'] = monarchState.get('physProgress_squats', defaultValue: 0);
     _questProgress['Running'] = monarchState.get('physProgress_running', defaultValue: 0);
 
-    _maxHp = settings.get('maxHp', defaultValue: HealthSystem.defaultMaxHp);
+    // VIT-linked MaxHP: recalculate from vitality (overrides stored maxHp)
+    _maxHp = HealthSystem.computeMaxHp(_vitality);
+    settings.put('maxHp', _maxHp); // sync in case VIT changed
     _hp = settings.get('hp', defaultValue: _maxHp);
     _hp = _hp.clamp(0, _maxHp);
     _healthZone = HealthSystem.zoneFor(_hp, _maxHp);
@@ -398,11 +458,86 @@ class PlayerProvider extends ChangeNotifier {
 
     _syncActiveDirectiveOnInit();
 
+    // Load mana crystal fields
+    _manaCrystals = settings.get('manaCrystals', defaultValue: 0);
+    _lastStreakCrystalMilestone = settings.get('lastStreakCrystalMilestone', defaultValue: 0);
+    _totalTechnicalCompletions = settings.get('totalTechnicalCompletions', defaultValue: 0);
+    _activeItemEffect = settings.get('activeItemEffect', defaultValue: '');
+
+    // Load last known rank (for rank-up detection)
+    _lastKnownRank = settings.get('lastKnownRank', defaultValue: 'E');
+
+    // Load physical reward guard
+    _physicalStatAwarded = monarchState.get('physicalStatAwarded', defaultValue: false);
+
+    // Load side quest state (auto-reset if it's a new day)
+    final sideQuestDate = settings.get('sideQuestDate', defaultValue: '');
+    final todaySq = _todayLocalString();
+    if (sideQuestDate == todaySq) {
+      for (int i = 0; i < _sideQuestsCompleted.length; i++) {
+        _sideQuestsCompleted[i] = settings.get('sideQuest_${i}_done', defaultValue: false);
+      }
+      _sideQuestDate = sideQuestDate;
+    } else {
+      _sideQuestDate = todaySq;
+      settings.put('sideQuestDate', _sideQuestDate);
+      for (int i = 0; i < _sideQuestsCompleted.length; i++) {
+        _sideQuestsCompleted[i] = false;
+        settings.put('sideQuest_${i}_done', false);
+      }
+    }
+
     _checkResets();
-    
+
+    // ── NEW: Load hunter profile ──────────────────────────────
+    _loadProfile();
+
+    // ── NEW: Load premium tier ───────────────────────────────
+    final tierStr = settings.get('premiumTier', defaultValue: 'free') as String;
+    _tier = tierStr == 'premium'
+        ? PremiumTier.premium
+        : tierStr == 'superPremium'
+            ? PremiumTier.superPremium
+            : PremiumTier.free;
+
+    // ── NEW: Load performance counters ───────────────────────
+    _totalQuestsCompleted = settings.get('totalQuestsCompleted', defaultValue: 0) as int;
+    _totalQuestsFailed = settings.get('totalQuestsFailed', defaultValue: 0) as int;
+
+    // ── NEW: Load shadow chronicle ───────────────────────────
+    try {
+      final raw = settings.get('shadowChronicle', defaultValue: '[]') as String;
+      final list = json.decode(raw) as List;
+      _chronicle = list
+          .map((e) => ChronicleEntry.fromMap(e as Map))
+          .toList();
+    } catch (_) {
+      _chronicle = [];
+    }
+
+    // ── NEW: Load custom quests for today ────────────────────
+    try {
+      final todayCQ = _todayLocalString();
+      final rawCQ = settings.get('customQuests_$todayCQ', defaultValue: '[]') as String;
+      final listCQ = json.decode(rawCQ) as List;
+      _customQuests = listCQ
+          .map((e) => CustomQuest.fromMap(e as Map))
+          .toList();
+    } catch (_) {
+      _customQuests = [];
+    }
+
+    // ── NEW: Load pending penalty dungeon flag ───────────────
+    // DISABLED — penalty dungeon UI removed. Reset any stale flag.
+    _hasPendingPenaltyDungeon = false;
+    HiveService.settings.put('hasPendingPenaltyDungeon', false);
+
+    // ── NEW: Generate daily quests ───────────────────────────
+    _generateDailyQuestsIfNeeded();
+
     // Schedule midnight timer for Monarch Integration
     _scheduleMidnightTimer();
-    
+
     notifyListeners();
   }
 
@@ -464,10 +599,9 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void _onMidnightReached() {
-    // This will be called by the midnight timer
-    // CoreEngine.runMidnightJudgement will be implemented in task 4.1
-    // For now, just log that midnight was reached
-    log('SYSTEM: Midnight reached. Midnight Judgement scheduled.');
+    log('SYSTEM: Midnight reached. Running nightly judgement.');
+    failExpiredQuests();
+    _generateDailyQuestsIfNeeded();
   }
 
   // =========================
@@ -575,6 +709,14 @@ class PlayerProvider extends ChangeNotifier {
 
       // -- Reset daily flags --
       _dailyQuestCleared = false;
+      _physicalStatAwarded = false;
+      HiveService.monarchState.put('physicalStatAwarded', false);
+      for (int i = 0; i < _sideQuestsCompleted.length; i++) {
+        _sideQuestsCompleted[i] = false;
+        settings.put('sideQuest_${i}_done', false);
+      }
+      _sideQuestDate = todayStr;
+      settings.put('sideQuestDate', todayStr);
       _dailyXPEarned = 0;
       _dailyXPDate = todayStr;
       _studySessionsToday = 0;
@@ -668,6 +810,46 @@ class PlayerProvider extends ChangeNotifier {
   bool get dailyQuestCleared => _dailyQuestCleared;
   bool get isRestricted => _walletXP < 0;
   List<String> get systemLogs => List.unmodifiable(_systemLogs);
+
+  // ── NEW: Profile & Premium getters ────────────────────────
+  HunterProfile? get profile => _profile;
+  bool get hasProfile => _profile != null;
+  PremiumTier get tier => _tier;
+  bool get isPremium => _tier != PremiumTier.free;
+  bool get isFreeTier => _tier == PremiumTier.free;
+  int get customQuestLimit => TierLimits.customQuestLimit(_tier);
+  int get customQuestsUsedToday => _customQuests
+      .where((q) => q.createdDate == _todayLocalString())
+      .length;
+  bool get canAddCustomQuest =>
+      isPremium && customQuestsUsedToday < customQuestLimit;
+
+  // ── NEW: Daily quest getters ───────────────────────────────
+  List<DailyQuest> get dailyQuests => List.unmodifiable(_dailyQuests);
+  bool get isRestDay => _profile == null
+      ? false
+      : !_profile!.trainingDays.contains(DateTime.now().weekday);
+  bool get allDailyQuestsDone =>
+      _dailyQuests.isNotEmpty && _dailyQuests.every((q) => q.completed);
+
+  // ── NEW: Custom quest getters ─────────────────────────────
+  List<CustomQuest> get customQuests => List.unmodifiable(_customQuests);
+
+  // ── NEW: Chronicle getters ────────────────────────────────
+  List<ChronicleEntry> get chronicle => List.unmodifiable(_chronicle);
+
+  // ── NEW: Performance getters ──────────────────────────────
+  int get totalQuestsCompleted => _totalQuestsCompleted;
+  int get totalQuestsFailed => _totalQuestsFailed;
+  double get questCompletionRate {
+    final total = _totalQuestsCompleted + _totalQuestsFailed;
+    return total == 0 ? 1.0 : _totalQuestsCompleted / total;
+  }
+
+  // ── NEW: Penalty dungeon getters ──────────────────────────
+  bool get hasPendingPenaltyDungeon => _hasPendingPenaltyDungeon;
+  List<DailyQuest> get failedQuestsForDungeon =>
+      _dailyQuests.where((q) => q.failed && !q.completed).toList();
   List<String> get penaltyLog => List.unmodifiable(_penaltyLog);
 
   int get Strength => _strength;
@@ -690,6 +872,7 @@ class PlayerProvider extends ChangeNotifier {
   void increaseDiscipline() => increaseVitality();
   // increaseIntelligence is already defined
   bool get pendingAllocationReminder => _pendingAllocationReminder;
+  bool get physicalStatAwarded => _physicalStatAwarded;
   int get hp => _hp;
   int get maxHp => _maxHp;
   HealthZone get healthZone => _healthZone;
@@ -753,21 +936,79 @@ class PlayerProvider extends ChangeNotifier {
 
   // Physical stats
   /// 🔥 QUEST UI FRIENDLY GETTERS
+  /// 🔥 QUEST UI FRIENDLY GETTERS
   int get pushUps => _questProgress['Push-ups'] ?? 0;
   int get sitUps => _questProgress['Sit-ups'] ?? 0;
   int get squatsCount => _questProgress['Squats'] ?? 0;
   int get running => _questProgress['Running'] ?? 0;
 
   /// ✅ DAILY COMPLETION CHECK
+  /// Uses PhysicalFoundation.targets (100, 100, 100, 10)
   bool get isDailyPhysicalCompleted =>
       pushUps >= 100 &&
       sitUps >= 100 &&
       squatsCount >= 100 &&
-      running >= 100;
+      running >= 10;
+
+  void addPushUps(int amount) {
+    _questProgress['Push-ups'] = (pushUps + amount).clamp(0, 200);
+    HiveService.monarchState.put('physProgress_pushups', _questProgress['Push-ups']);
+    _checkLimiterRemoval();
+    notifyListeners();
+  }
+
+  void addSitUps(int amount) {
+    _questProgress['Sit-ups'] = (sitUps + amount).clamp(0, 200);
+    HiveService.monarchState.put('physProgress_situps', _questProgress['Sit-ups']);
+    _checkLimiterRemoval();
+    notifyListeners();
+  }
+
+  void addSquats(int amount) {
+    _questProgress['Squats'] = (squatsCount + amount).clamp(0, 200);
+    HiveService.monarchState.put('physProgress_squats', _questProgress['Squats']);
+    _checkLimiterRemoval();
+    notifyListeners();
+  }
+
+  void addRunning(int amount) {
+    _questProgress['Running'] = (running + amount).clamp(0, 20);
+    HiveService.monarchState.put('physProgress_running', _questProgress['Running']);
+    _checkLimiterRemoval();
+    notifyListeners();
+  }
+
+  void _checkLimiterRemoval() {
+    if (_limiterRemovedToday) return;
+    if (PhysicalFoundation.isLimiterRemoved(_questProgress)) {
+      _limiterRemovedToday = true;
+      HiveService.monarchState.put('limiterRemovedToday', true);
+      awardManaCrystals(1, 'LIMITER REMOVAL');
+      log('SYSTEM: LIMITER REMOVAL DETECTED — SECRET REWARDS ACTIVE.');
+    }
+  }
 
   /// Next pending level-up moment to show (full-screen overlay).
   LevelUpEvent? get nextLevelUpEvent =>
       _levelUpQueue.isEmpty ? null : _levelUpQueue.first;
+
+  /// Next pending rank-up moment to show.
+  RankUpEvent? get nextRankUpEvent =>
+      _rankUpQueue.isEmpty ? null : _rankUpQueue.first;
+
+  // ── MANA CRYSTAL GETTERS ──────────────────────────────────────
+  int get manaCrystals => _manaCrystals;
+  int get maxManaCrystals => ManaCrystalEngine.computeMaxCrystals(
+        rank: rank,
+        per: _perception,
+      );
+  int get totalTechnicalCompletions => _totalTechnicalCompletions;
+  String get activeItemEffect => _activeItemEffect;
+  bool get hasActiveItemEffect => _activeItemEffect.isNotEmpty;
+
+  /// Whether the player can currently allocate stat points.
+  /// Blocked when wallet is in debt.
+  bool get canAllocateStats => _walletXP >= 0;
 
   // ----------------------------
   // Ability unlock / activation
@@ -1229,6 +1470,14 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   int logCustomSin(int penalty, String label) {
+    // Neutralize Sin item effect — zero cost, consume flag
+    if (_activeItemEffect == 'neutralize_sin' || _activeItemEffect == 'nutrient_override') {
+      consumeItemEffect();
+      log('SYSTEM: $label — SIN NEUTRALIZED BY ITEM EFFECT. NO PENALTY.');
+      notifyListeners();
+      return 0;
+    }
+
     final bool shield = _disciplineShieldNext;
     if (shield) _disciplineShieldNext = false;
 
@@ -1307,8 +1556,8 @@ class PlayerProvider extends ChangeNotifier {
 
     _level = _calculateLevel(_totalXP);
 
-    // Level-up points only if wallet not in debt
-    if (_walletXP >= 0 && _level > oldLevel) {
+    // Level-up points (awarded regardless of debt — points just can't be spent while in debt)
+    if (_level > oldLevel) {
       int pts = _level - oldLevel;
       _availablePoints += pts;
       settings.put('availablePoints', _availablePoints);
@@ -1321,7 +1570,48 @@ class PlayerProvider extends ChangeNotifier {
       );
     }
 
+    // Rank-up detection (checked every XP award)
+    _checkAndEnqueueRankUp();
+
     notifyListeners();
+  }
+
+  /// Compares current rank to lastKnownRank and enqueues a RankUpEvent if changed.
+  void _checkAndEnqueueRankUp() {
+    final currentRank = rank;
+    if (currentRank != _lastKnownRank) {
+      // Only fire if it's a genuine upgrade (rank order: GOD > S > A > B > C > D > E)
+      const order = ['E', 'D', 'C', 'B', 'A', 'S', 'GOD'];
+      final prevIdx = order.indexOf(_lastKnownRank);
+      final currIdx = order.indexOf(currentRank);
+      if (currIdx > prevIdx) {
+        final jobLabel = _jobLabelForRank(currentRank);
+        _rankUpQueue.add(RankUpEvent(
+          fromRank: _lastKnownRank,
+          toRank: currentRank,
+          newJobLabel: jobLabel,
+          systemVoiceLine: RankUpEvent.voiceLineFor(currentRank),
+        ));
+        log('SYSTEM: RANK UP → $currentRank. JOB: $jobLabel. THE SYSTEM EVOLVES.');
+      }
+      _lastKnownRank = currentRank;
+      HiveService.settings.put('lastKnownRank', _lastKnownRank);
+    }
+  }
+
+  static String jobLabelForRank(String rank) => _jobLabelForRank(rank);
+
+  static String _jobLabelForRank(String rank) {
+    switch (rank) {
+      case 'E': return 'UNREGISTERED HUNTER';
+      case 'D': return 'IRON GATE INITIATE';
+      case 'C': return 'AWAKENED OPERATIVE';
+      case 'B': return 'SHADOW VANGUARD';
+      case 'A': return 'SOVEREIGN BLADE';
+      case 'S': return 'DARK MONARCH';
+      case 'GOD': return 'THE ABSOLUTE';
+      default:  return 'UNREGISTERED HUNTER';
+    }
   }
 
   void _applyHpLoss(int amount, String reason) {
@@ -1484,7 +1774,7 @@ class PlayerProvider extends ChangeNotifier {
   // ============================================================
 
   void increaseStrength() {
-    if (_availablePoints > 0) {
+    if (_availablePoints > 0 && canAllocateStats) {
       _strength++;
       _availablePoints--;
       final settings = HiveService.settings;
@@ -1504,12 +1794,17 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void increaseVitality() {
-    if (_availablePoints > 0) {
+    if (_availablePoints > 0 && canAllocateStats) {
       _vitality++;
       _availablePoints--;
       final settings = HiveService.settings;
       settings.put('vitality', _vitality);
       settings.put('availablePoints', _availablePoints);
+      // Recalculate VIT-linked MaxHP
+      _maxHp = HealthSystem.computeMaxHp(_vitality);
+      settings.put('maxHp', _maxHp);
+      _hp = _hp.clamp(0, _maxHp);
+      settings.put('hp', _hp);
       if (_availablePoints == 0 && _pendingAllocationReminder) {
         _pendingAllocationReminder = false;
         settings.put('pendingAllocationReminder', false);
@@ -1523,7 +1818,7 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void increaseAgility() {
-    if (_availablePoints > 0) {
+    if (_availablePoints > 0 && canAllocateStats) {
       _agility++;
       _availablePoints--;
       final settings = HiveService.settings;
@@ -1542,7 +1837,7 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void increaseIntelligence() {
-    if (_availablePoints > 0) {
+    if (_availablePoints > 0 && canAllocateStats) {
       _intelligence++;
       _availablePoints--;
       final settings = HiveService.settings;
@@ -1561,7 +1856,7 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void increasePerception() {
-    if (_availablePoints > 0) {
+    if (_availablePoints > 0 && canAllocateStats) {
       _perception++;
       _availablePoints--;
       final settings = HiveService.settings;
@@ -1656,10 +1951,6 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ============================================================
-  // SPEND XP (Rewards Terminal — wallet-only)
-  // ============================================================
-
   int spendXP(int amount) {
     // Wallet Abyss — can go negative (discipline reduces the cost).
     _applyHpLoss(HealthSystem.lossOnRedemption, 'REDEMPTION');
@@ -1676,6 +1967,139 @@ class PlayerProvider extends ChangeNotifier {
     );
     notifyListeners();
     return effectiveCost;
+  }
+
+  // ============================================================
+  // RANK-UP EVENT CONSUMPTION
+  // ============================================================
+
+  void consumeNextRankUpEvent() {
+    if (_rankUpQueue.isEmpty) return;
+    _rankUpQueue.removeAt(0);
+    notifyListeners();
+  }
+
+  // ============================================================
+  // MANA CRYSTAL ECONOMY
+  // ============================================================
+
+  /// Awards Mana Crystals, enforcing the capacity cap.
+  /// Returns the actual amount awarded (0 if at cap).
+  int awardManaCrystals(int amount, String reason) {
+    if (amount <= 0) return 0;
+    final cap = maxManaCrystals;
+    if (_manaCrystals >= cap) {
+      log('SYSTEM: MANA CIRCUIT AT CAPACITY. CRYSTAL REWARD LOST. [$reason]');
+      return 0;
+    }
+    final awarded = math.min(amount, cap - _manaCrystals);
+    _manaCrystals += awarded;
+    HiveService.settings.put('manaCrystals', _manaCrystals);
+    log('SYSTEM: +$awarded MANA CRYSTAL(S) AWARDED [$reason]. TOTAL: $_manaCrystals/$cap.');
+    notifyListeners();
+    return awarded;
+  }
+
+  /// Spends Mana Crystals. Returns true if successful, false if insufficient.
+  bool spendManaCrystals(int amount) {
+    if (amount <= 0) return false;
+    if (_manaCrystals < amount) {
+      log('SYSTEM: INSUFFICIENT MANA CRYSTALS. Required: $amount. Have: $_manaCrystals.');
+      return false;
+    }
+    _manaCrystals -= amount;
+    HiveService.settings.put('manaCrystals', _manaCrystals);
+    log('SYSTEM: -$amount MANA CRYSTAL(S) SPENT. REMAINING: $_manaCrystals.');
+    notifyListeners();
+    return true;
+  }
+
+  /// Checks and awards streak milestone crystals (every 7-day multiple).
+  void _checkStreakCrystalMilestone() {
+    if (_streakDays <= 0) return;
+    if (_streakDays % 7 == 0 && _streakDays > _lastStreakCrystalMilestone) {
+      _lastStreakCrystalMilestone = _streakDays;
+      HiveService.settings.put('lastStreakCrystalMilestone', _lastStreakCrystalMilestone);
+      awardManaCrystals(
+        MonarchRewards.manaCrystalsPerWeekStreak,
+        '7-DAY STREAK MILESTONE',
+      );
+    }
+  }
+
+  // ============================================================
+  // ITEM EFFECT SYSTEM (Rewards Terminal)
+  // ============================================================
+
+  /// Activates an item effect flag. Consumed by relevant session logic.
+  void applyItemEffect(String effectId) {
+    _activeItemEffect = effectId;
+    HiveService.settings.put('activeItemEffect', effectId);
+    log('SYSTEM: ITEM EFFECT ACTIVATED — $effectId.');
+    notifyListeners();
+  }
+
+  /// Clears the active item effect flag (call after effect is consumed).
+  void consumeItemEffect() {
+    if (_activeItemEffect.isEmpty) return;
+    log('SYSTEM: ITEM EFFECT CONSUMED — $_activeItemEffect.');
+    _activeItemEffect = '';
+    HiveService.settings.put('activeItemEffect', '');
+    notifyListeners();
+  }
+
+  /// Purchases a WalletXP item from the Redemption Terminal.
+  /// Returns true if purchase succeeded.
+  bool purchaseRedemptionItem(RedemptionItem item) {
+    if (!meetsRankRequirement(rank, item.rankRequired)) {
+      log('SYSTEM: INSUFFICIENT RANK FOR — ${item.name}. Required: ${item.rankRequired}.');
+      return false;
+    }
+    if (_walletXP < item.costXP) {
+      log('SYSTEM: INSUFFICIENT WALLET XP FOR — ${item.name}.');
+      return false;
+    }
+    spendXP(item.costXP);
+    // Direct effects
+    if (item.id == 'nap_protocol') {
+      _applyHpRecovery(10, 'NAP PROTOCOL');
+    }
+    // Apply timed effects
+    if (item.effectId != null) {
+      applyItemEffect(item.effectId!);
+    }
+    log('SYSTEM: ITEM PURCHASED — ${item.name}.');
+    return true;
+  }
+
+  /// Purchases a Crystal item from the Crystal Exchange.
+  /// Returns true if purchase succeeded.
+  bool purchaseCrystalItem(RedemptionItem item) {
+    if (!meetsRankRequirement(rank, item.rankRequired)) {
+      log('SYSTEM: INSUFFICIENT RANK FOR CRYSTAL ITEM — ${item.name}.');
+      return false;
+    }
+    if (_manaCrystals < item.costCrystals) {
+      log('SYSTEM: INSUFFICIENT MANA CRYSTALS FOR — ${item.name}.');
+      return false;
+    }
+    if (!spendManaCrystals(item.costCrystals)) return false;
+    // Direct effects
+    if (item.id == 'rune_stone') {
+      _availablePoints++;
+      HiveService.settings.put('availablePoints', _availablePoints);
+      log('SYSTEM: RUNE STONE CONSUMED. +1 STAT POINT.');
+    } else if (item.id == 'restoration_potion') {
+      if (_walletXP < 0) {
+        _walletXP = 0;
+        HiveService.settings.put('walletXP', _walletXP);
+        log('SYSTEM: RESTORATION POTION. WALLET DEBT CLEARED.');
+      }
+    } else if (item.effectId != null) {
+      applyItemEffect(item.effectId!);
+    }
+    notifyListeners();
+    return true;
   }
 
   // ============================================================
@@ -1817,6 +2241,36 @@ class PlayerProvider extends ChangeNotifier {
     return PhysicalFoundation.completionPct(_questProgress);
   }
 
+  // ── SIDE QUEST STATE ─────────────────────────────────────────────
+
+  /// Returns true if the side quest at [index] has been completed today.
+  bool sideQuestDone(int index) {
+    if (index < 0 || index >= _sideQuestsCompleted.length) return false;
+    return _sideQuestsCompleted[index];
+  }
+
+  /// Marks a side quest complete and awards XP. Idempotent.
+  void completeSideQuest(int index, int xpReward) {
+    if (index < 0 || index >= _sideQuestsCompleted.length) return;
+    if (_sideQuestsCompleted[index]) return;
+    _sideQuestsCompleted[index] = true;
+    HiveService.settings.put('sideQuest_${index}_done', true);
+    addXP(xpReward); // addXP → notifyListeners internally
+    log('SYSTEM: SIDE QUEST #${index + 1} COMPLETED. +$xpReward XP.');
+  }
+
+  /// Awards STR per backend contract on first physical quest completion.
+  /// Idempotent — fires at most once per day.
+  void completeDailyPhysicalReward() {
+    if (_physicalStatAwarded) return;
+    if (!isDailyPhysicalCompleted) return;
+    _physicalStatAwarded = true;
+    HiveService.monarchState.put('physicalStatAwarded', true);
+    awardSTR(MonarchRewards.strPerPhysicalCompletion);
+    log('SYSTEM: PHYSICAL QUEST REWARD CLAIMED. +${MonarchRewards.strPerPhysicalCompletion} STR.');
+    notifyListeners();
+  }
+
   /// Resets all Physical Foundation sub-task progress values to zero.
   ///
   /// This is called during Midnight Judgement to reset progress for the new day.
@@ -1874,8 +2328,11 @@ class PlayerProvider extends ChangeNotifier {
       // Persist available points to settings
       HiveService.settings.put('availablePoints', _availablePoints);
       
+      // Award Mana Crystal for Limiter Removal
+      awardManaCrystals(MonarchRewards.manaCrystalsPerLimiterRemoval, 'LIMITER REMOVAL');
+      
       // Log the event
-      log('SYSTEM: LIMITER REMOVED. +5 STAT POINTS AWARDED.');
+      log('SYSTEM: LIMITER REMOVED. +5 STAT POINTS + 1 MANA CRYSTAL AWARDED.');
       
       // Notify listeners to update UI (will trigger overlay)
       notifyListeners();
@@ -1897,18 +2354,11 @@ class PlayerProvider extends ChangeNotifier {
   /// - amount: The number of STR points to award (must be positive)
   void awardSTR(int amount) {
     if (amount <= 0) return;
-    
-    // Increment STR stat
     _str += amount;
-    
-    // Persist to monarch_state box
-    final monarchState = HiveService.monarchState;
-    monarchState.put('str', _str);
-    
-    // Log the award
+    // Persist to BOTH boxes so it survives restart
+    HiveService.settings.put('strength', _strength);
+    HiveService.monarchState.put('str', _str);
     log('SYSTEM: +$amount STR AWARDED. TOTAL STR: $_str.');
-    
-    // Notify listeners to update UI
     notifyListeners();
   }
 
@@ -1923,18 +2373,11 @@ class PlayerProvider extends ChangeNotifier {
   /// - amount: The number of INT points to award (must be positive)
   void awardINT(int amount) {
     if (amount <= 0) return;
-    
-    // Increment INT stat
     _int += amount;
-    
-    // Persist to monarch_state box
-    final monarchState = HiveService.monarchState;
-    monarchState.put('intStat', _int);
-    
-    // Log the award
+    // Persist to BOTH boxes so it survives restart
+    HiveService.settings.put('intelligence', _intelligence);
+    HiveService.monarchState.put('intStat', _int);
     log('SYSTEM: +$amount INT AWARDED. TOTAL INT: $_int.');
-    
-    // Notify listeners to update UI
     notifyListeners();
   }
 
@@ -1949,18 +2392,11 @@ class PlayerProvider extends ChangeNotifier {
   /// - amount: The number of PER points to award (must be positive)
   void awardPER(int amount) {
     if (amount <= 0) return;
-    
-    // Increment PER stat
     _per += amount;
-    
-    // Persist to monarch_state box
-    final monarchState = HiveService.monarchState;
-    monarchState.put('per', _per);
-    
-    // Log the award
+    // Persist to BOTH boxes so it survives restart
+    HiveService.settings.put('perception', _perception);
+    HiveService.monarchState.put('per', _per);
     log('SYSTEM: +$amount PER AWARDED. TOTAL PER: $_per.');
-    
-    // Notify listeners to update UI
     notifyListeners();
   }
 
@@ -2164,10 +2600,22 @@ class PlayerProvider extends ChangeNotifier {
     // Award INT stat points
     awardINT(MonarchRewards.intPerTechnicalCompletion);
     
-    // Log the completion (awardINT already logs, so just note the quest completion)
-    log('SYSTEM: TECHNICAL QUEST COMPLETED.');
+    // Track total technical completions for crystal milestone
+    _totalTechnicalCompletions++;
+    HiveService.settings.put('totalTechnicalCompletions', _totalTechnicalCompletions);
     
-    // Notify listeners to update UI (already called by awardINT, but ensure consistency)
+    // Award Mana Crystals every 10th technical completion
+    if (_totalTechnicalCompletions % 10 == 0) {
+      awardManaCrystals(
+        MonarchRewards.manaCrystalsPerTechnicalMilestone,
+        'TECHNICAL MILESTONE #${_totalTechnicalCompletions ~/ 10}',
+      );
+    }
+    
+    // Log the completion
+    log('SYSTEM: TECHNICAL QUEST COMPLETED. TOTAL: $_totalTechnicalCompletions.');
+    
+    // Notify listeners
     notifyListeners();
   }
 
@@ -2195,11 +2643,323 @@ class PlayerProvider extends ChangeNotifier {
     settings.put('bestStreak', _bestStreak);
     settings.put('consecutiveMisses', 0);
     
+    // +10 HP bonus for clearing physical quest (plan: recoveryOnPhysicalComplete)
+    _applyHpRecovery(HealthSystem.recoveryOnPhysicalComplete, 'PHYSICAL QUEST CLEARED');
+    
+    // Check streak crystal milestone AFTER updating streak
+    _checkStreakCrystalMilestone();
+    
     // Log the streak extension
     log('SYSTEM: DAY CLEARED. STREAK: $_streakDays DAYS.');
     
     // Notify listeners to update UI
     notifyListeners();
+  }
+
+
+
+
+  void _loadProfile() {
+    final settings = HiveService.settings;
+    final raw = settings.get('hunterProfile', defaultValue: '') as String;
+    if (raw.isEmpty) return;
+    try {
+      _profile = HunterProfile.fromMap(json.decode(raw) as Map);
+    } catch (_) {
+      _profile = null;
+    }
+  }
+
+  void saveProfile(HunterProfile p) {
+    _profile = p;
+    HiveService.settings.put('hunterProfile', json.encode(p.toMap()));
+    HiveService.settings.put('hasProfile', true);
+    _generateDailyQuestsIfNeeded(force: true);
+    log('SYSTEM: HUNTER PROFILE SAVED. DIRECTIVES RECALCULATED.');
+    notifyListeners();
+  }
+
+  bool get hasProfileSaved =>
+      HiveService.settings.get('hasProfile', defaultValue: false) as bool;
+
+  // ============================================================
+  // NEW: PREMIUM TIER
+  // ============================================================
+
+  void setPremiumTier(PremiumTier t) {
+    _tier = t;
+    HiveService.settings.put('premiumTier', t == PremiumTier.premium
+        ? 'premium'
+        : t == PremiumTier.superPremium
+            ? 'superPremium'
+            : 'free');
+    notifyListeners();
+  }
+
+  void devTogglePremium() {
+    setPremiumTier(
+        _tier == PremiumTier.free ? PremiumTier.premium : PremiumTier.free);
+    log('SYSTEM: [DEV] Premium toggled → ${TierLimits.tierLabel(_tier)}.');
+  }
+
+  // ============================================================
+  // NEW: DAILY QUEST ENGINE
+  // ============================================================
+
+  void _generateDailyQuestsIfNeeded({bool force = false}) {
+    final today = _todayLocalString();
+    if (!force && _dailyQuestEngineDate == today && _dailyQuests.isNotEmpty) {
+      return; // already generated today
+    }
+    _dailyQuestEngineDate = today;
+    HiveService.settings.put('dailyQuestEngineDate', today);
+
+    if (_profile == null) {
+      // No profile yet — use legacy physical quest data
+      _dailyQuests = _buildLegacyQuests();
+    } else if (!_profile!.isTrainingDay) {
+      _dailyQuests = []; // rest day
+    } else {
+      _dailyQuests = DailyQuestEngine.generate(_profile!);
+      // Restore persisted progress for today
+      _restoreDailyQuestProgress(today);
+    }
+    notifyListeners();
+  }
+
+  List<DailyQuest> _buildLegacyQuests() {
+    // Fallback when no profile exists — mirrors old physical quest targets
+    return [
+      DailyQuest(
+        id: 'pushups',
+        title: 'Push-ups',
+        statAffected: 'STR',
+        target: 100,
+        unit: 'reps',
+        progress: _questProgress['Push-ups'] ?? 0,
+        xpReward: 75,
+        xpPenalty: 100,
+      ),
+      DailyQuest(
+        id: 'situps',
+        title: 'Sit-ups',
+        statAffected: 'VIT',
+        target: 100,
+        unit: 'reps',
+        progress: _questProgress['Sit-ups'] ?? 0,
+        xpReward: 75,
+        xpPenalty: 100,
+      ),
+      DailyQuest(
+        id: 'squats',
+        title: 'Squats',
+        statAffected: 'AGI',
+        target: 100,
+        unit: 'reps',
+        progress: _questProgress['Squats'] ?? 0,
+        xpReward: 75,
+        xpPenalty: 100,
+      ),
+      DailyQuest(
+        id: 'running',
+        title: 'Running',
+        statAffected: 'AGI',
+        target: 100, // 10.0 km in 0.1km units
+        unit: '0.1km',
+        progress: (_questProgress['Running'] ?? 0) * 10,
+        xpReward: 90,
+        xpPenalty: 150,
+      ),
+    ];
+  }
+
+  void _restoreDailyQuestProgress(String date) {
+    final settings = HiveService.settings;
+    for (final q in _dailyQuests) {
+      q.progress = settings.get('dqp_${date}_${q.id}', defaultValue: 0) as int;
+      q.completed = settings.get('dqc_${date}_${q.id}', defaultValue: false) as bool;
+      q.failed    = settings.get('dqf_${date}_${q.id}', defaultValue: false) as bool;
+    }
+  }
+
+  void logQuestProgress(String questId, int amount) {
+    final today = _todayLocalString();
+    final idx = _dailyQuests.indexWhere((q) => q.id == questId);
+    if (idx < 0) return;
+    final q = _dailyQuests[idx];
+    if (q.completed || q.failed) return;
+    q.progress = (q.progress + amount).clamp(0, q.target * 3);
+    HiveService.settings.put('dqp_${today}_${q.id}', q.progress);
+    if (q.progress >= q.target && !q.completed) {
+      _completeQuest(q, today);
+    }
+    // Mirror to legacy fields for backward compat
+    _mirrorProgressToLegacy(q);
+    notifyListeners();
+  }
+
+  void _mirrorProgressToLegacy(DailyQuest q) {
+    switch (q.id) {
+      case 'pushups': _questProgress['Push-ups'] = q.progress; break;
+      case 'situps':  _questProgress['Sit-ups']  = q.progress; break;
+      case 'squats':  _questProgress['Squats']   = q.progress; break;
+      case 'running': _questProgress['Running']  = q.progress ~/ 10; break;
+    }
+  }
+
+  void _completeQuest(DailyQuest q, String date) {
+    q.completed = true;
+    HiveService.settings.put('dqc_${date}_${q.id}', true);
+    _totalQuestsCompleted++;
+    HiveService.settings.put('totalQuestsCompleted', _totalQuestsCompleted);
+    addXP(q.xpReward);
+    addChronicleEntry(ChronicleEntry(
+      timestamp: DateTime.now(),
+      type: ChronicleType.questComplete,
+      title: 'QUEST COMPLETE',
+      detail: '${q.title} — ${q.progress}/${q.target} ${q.unit}',
+      xpDelta: q.xpReward,
+    ));
+    _applyHpRecovery(5, 'QUEST COMPLETION');
+    log('SYSTEM: QUEST COMPLETED — ${q.title}. +${q.xpReward} XP.');
+    // Check if all done
+    if (_dailyQuests.every((dq) => dq.completed)) {
+      setDailyQuestCleared();
+    }
+  }
+
+  void failExpiredQuests() {
+    final today = _todayLocalString();
+    bool anyFailed = false;
+    for (final q in _dailyQuests) {
+      if (!q.completed && !q.failed) {
+        q.failed = true;
+        HiveService.settings.put('dqf_${today}_${q.id}', true);
+        _totalQuestsFailed++;
+        HiveService.settings.put('totalQuestsFailed', _totalQuestsFailed);
+        _applyWalletDecreaseWithFloor(amount: q.xpPenalty, reason: 'QUEST FAILED: ${q.title}');
+        _applyHpLoss(10, 'QUEST FAILURE');
+        addChronicleEntry(ChronicleEntry(
+          timestamp: DateTime.now(),
+          type: ChronicleType.questFail,
+          title: 'QUEST FAILED',
+          detail: '${q.title} — ${q.progress}/${q.target} ${q.unit}',
+          xpDelta: -q.xpPenalty,
+        ));
+        log('SYSTEM: QUEST FAILED — ${q.title}. -${q.xpPenalty} WalletXP.');
+        anyFailed = true;
+      }
+    }
+    // Custom quest failures
+    for (final cq in _customQuests) {
+      if (!cq.completed && !cq.failed && cq.createdDate == today) {
+        cq.failed = true;
+        _totalQuestsFailed++;
+        HiveService.settings.put('totalQuestsFailed', _totalQuestsFailed);
+        _applyWalletDecreaseWithFloor(amount: cq.xpPenalty, reason: 'CUSTOM QUEST FAILED: ${cq.title}');
+        addChronicleEntry(ChronicleEntry(
+          timestamp: DateTime.now(),
+          type: ChronicleType.questFail,
+          title: 'DIRECTIVE FAILED',
+          detail: cq.title,
+          xpDelta: -cq.xpPenalty,
+        ));
+        anyFailed = true;
+      }
+    }
+    _persistCustomQuests();
+    if (anyFailed) {
+      _hasPendingPenaltyDungeon = true;
+      HiveService.settings.put('hasPendingPenaltyDungeon', true);
+    }
+    notifyListeners();
+  }
+
+  void completePenaltyDungeon(int xpRecovery) {
+    _hasPendingPenaltyDungeon = false;
+    HiveService.settings.put('hasPendingPenaltyDungeon', false);
+    addXP(xpRecovery);
+    addChronicleEntry(ChronicleEntry(
+      timestamp: DateTime.now(),
+      type: ChronicleType.penaltyRecovery,
+      title: 'PENALTY RECOVERED',
+      detail: 'Dungeon penance completed.',
+      xpDelta: xpRecovery,
+    ));
+    log('SYSTEM: PENALTY DUNGEON CLEARED. +$xpRecovery XP RECOVERED.');
+    notifyListeners();
+  }
+
+  void abandonPenaltyDungeon() {
+    _hasPendingPenaltyDungeon = false;
+    HiveService.settings.put('hasPendingPenaltyDungeon', false);
+    log('SYSTEM: PENALTY DUNGEON ABANDONED. XP RECOVERY FORFEITED.');
+    notifyListeners();
+  }
+
+  // ============================================================
+  // NEW: CUSTOM QUESTS
+  // ============================================================
+
+  bool addCustomQuest(CustomQuest q) {
+    if (!isPremium) return false;
+    if (!canAddCustomQuest) return false;
+    _customQuests.add(q);
+    _persistCustomQuests();
+    addChronicleEntry(ChronicleEntry(
+      timestamp: DateTime.now(),
+      type: ChronicleType.customQuestLock,
+      title: 'DIRECTIVE LOCKED',
+      detail: q.title,
+      xpDelta: null,
+    ));
+    log('SYSTEM: CUSTOM QUEST LOCKED — ${q.title}.');
+    notifyListeners();
+    return true;
+  }
+
+  void completeCustomQuest(String id) {
+    final idx = _customQuests.indexWhere((q) => q.id == id);
+    if (idx < 0) return;
+    final q = _customQuests[idx];
+    if (q.completed || q.failed) return;
+    q.completed = true;
+    _totalQuestsCompleted++;
+    HiveService.settings.put('totalQuestsCompleted', _totalQuestsCompleted);
+    _persistCustomQuests();
+    addXP(q.xpReward);
+    addChronicleEntry(ChronicleEntry(
+      timestamp: DateTime.now(),
+      type: ChronicleType.questComplete,
+      title: 'DIRECTIVE COMPLETE',
+      detail: q.title,
+      xpDelta: q.xpReward,
+    ));
+    log('SYSTEM: CUSTOM QUEST COMPLETED — ${q.title}. +${q.xpReward} XP.');
+    notifyListeners();
+  }
+
+  void _persistCustomQuests() {
+    final today = _todayLocalString();
+    final encoded = json.encode(_customQuests.map((q) => q.toMap()).toList());
+    HiveService.settings.put('customQuests_$today', encoded);
+  }
+
+  // ============================================================
+  // NEW: SHADOW CHRONICLE
+  // ============================================================
+
+  void addChronicleEntry(ChronicleEntry e) {
+    _chronicle.insert(0, e);
+    if (_chronicle.length > 150) _chronicle.removeLast();
+    _persistChronicle();
+  }
+
+  void _persistChronicle() {
+    try {
+      final encoded = json.encode(_chronicle.map((e) => e.toMap()).toList());
+      HiveService.settings.put('shadowChronicle', encoded);
+    } catch (_) {}
   }
 
   @override

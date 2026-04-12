@@ -1,10 +1,22 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:provider/provider.dart';
+
 import 'player_provider.dart';
+import 'system/mana_crystal_engine.dart';
 import 'ui/theme/app_text_styles.dart';
 import 'ui/theme/app_colors.dart';
 import 'ui/widgets/widgets.dart';
+
+// ============================================================
+//  STATUS SCREEN — Full V2
+//  Section 1: Identity Block (name, rank badge, job, title)
+//  Section 2: Level + XP Progress Bar
+//  Section 3: HP + VIT-linked HP bar
+//  Section 4: Core Stats Grid (STR VIT AGI INT PER)
+//  Section 5: Currency Row (WalletXP + Mana Crystals)
+//  Section 6: Streak + Discipline Stats
+// ============================================================
 
 class StatusScreen extends StatelessWidget {
   const StatusScreen({super.key});
@@ -12,7 +24,6 @@ class StatusScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final player = Provider.of<PlayerProvider>(context);
-    final isDebt = player.walletXP < 0;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -21,24 +32,12 @@ class StatusScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
-            /// 🔥 QUEST INFO PANEL
+            // STATUS WINDOW is the ONLY panel on this screen.
+            // Quest Info lives on the Quests tab.
             HolographicPanel(
-              header: const SystemHeaderBar(label: 'QUEST INFO'),
-              emphasize: true,
-              child: _buildQuestUI(context, player),
-            ),
-
-            /// ⚔️ SOLO LEVELING STATUS WINDOW
-            HolographicPanel(
-              header: const SystemHeaderBar(label: 'STATUS'),
+              header: const SystemHeaderBar(label: 'STATUS WINDOW'),
               emphasize: true,
               child: _buildStatusWindow(player),
-            ),
-
-            HolographicPanel(
-              header: const SystemHeaderBar(label: 'WALLET XP ECONOMY'),
-              child: _buildEconomyTerminal(player, isDebt),
             ),
 
             const SizedBox(height: 24),
@@ -48,17 +47,51 @@ class StatusScreen extends StatelessWidget {
     );
   }
 
-  // ============================================================
-  //  SOLO LEVELING STATUS WINDOW
-  // ============================================================
-  Widget _buildStatusWindow(PlayerProvider player) {
-    final job = _jobLabel(player.rank);
-    final title = _titleLabel(player.level);
+  String _titleLabel(PlayerProvider p) {
+    final lv = p.level;
+    String base;
+    if (lv < 5) {
+      base = '—';
+    } else if (lv < 10) {
+      base = 'NOVICE';
+    } else if (lv < 16) {
+      base = 'AWAKENED';
+    } else if (lv < 25) {
+      base = 'HUNTER';
+    } else if (lv < 40) {
+      base = 'SOVEREIGN';
+    } else if (lv < 50) {
+      base = 'SHADOW BLADE';
+    } else {
+      base = 'MONARCH';
+    }
+    if (p.overloadTitleAwarded && base != '—') base += ' OF EXCESS';
+    return base;
+  }
 
-    // XP progress to next level
-    // Formula: level = floor(sqrt(totalXP) / 10) + 1
-    // currentThreshold = ((level-1)*10)^2
-    // nextThreshold    = (level*10)^2
+  Color _rankColor(String rank) {
+    switch (rank) {
+      case 'GOD': return const Color(0xFFE040FB);
+      case 'S':   return const Color(0xFF00E5FF);
+      case 'A':   return const Color(0xFFFFCA28);
+      case 'B':   return const Color(0xFF66BB6A);
+      case 'C':   return const Color(0xFF26C6DA);
+      case 'D':   return const Color(0xFF78909C);
+      default:    return Colors.white38;
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────
+  //  STATUS WINDOW
+  // ────────────────────────────────────────────────────────────
+  Widget _buildStatusWindow(PlayerProvider player) {
+    final rank = player.rank;
+    final job = PlayerProvider.jobLabelForRank(rank);
+    final title = _titleLabel(player);
+    final rankCol = _rankColor(rank);
+    final isDebt = player.walletXP < 0;
+
+    // XP math (level XP bar)
     final currentThreshold = math.pow((player.level - 1) * 10, 2).toInt();
     final nextThreshold = math.pow(player.level * 10, 2).toInt();
     final xpRange = (nextThreshold - currentThreshold).clamp(1, 999999999);
@@ -69,321 +102,458 @@ class StatusScreen extends StatelessWidget {
         ? (player.hp / player.maxHp).clamp(0.0, 1.0)
         : 1.0;
 
+    final crystalProgress = player.maxManaCrystals > 0
+        ? (player.manaCrystals / player.maxManaCrystals).clamp(0.0, 1.0)
+        : 0.0;
+
     return Column(
       children: [
-        // ── Level + JOB/TITLE row ──────────────────────────────
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+        // ── SECTION 1: IDENTITY BLOCK ──────────────────────────
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: rankCol.withValues(alpha: 0.04),
+            border: Border.all(color: rankCol.withValues(alpha: 0.25)),
+          ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Big level number
-              Text(
-                '${player.level}',
-                style: const TextStyle(
-                  fontFamily: 'Roboto',
-                  fontSize: 64,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                  height: 1.0,
+              // Rank badge
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  border: Border.all(color: rankCol, width: 1.5),
+                  color: rankCol.withValues(alpha: 0.10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: rankCol.withValues(alpha: 0.35),
+                      blurRadius: 12,
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 4),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                alignment: Alignment.center,
                 child: Text(
-                  'LEVEL',
-                  style: AppTextStyles.systemLabel.copyWith(
-                    color: AppColors.textSecondary,
-                    fontSize: 10,
-                    letterSpacing: 2,
+                  rank,
+                  style: TextStyle(
+                    color: rankCol,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
                   ),
                 ),
               ),
-              const SizedBox(width: 24),
-              // JOB / TITLE column
+              const SizedBox(width: 14),
+
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _JobTitleLine(label: 'JOB', value: job),
+                    Text(
+                      player.name.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      job,
+                      style: TextStyle(
+                        color: rankCol.withValues(alpha: 0.85),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    _JobTitleLine(label: 'TITLE', value: title),
+                    Row(
+                      children: [
+                        if (player.streakDays >= 7)
+                          _Tag('[STREAKING]', AppColors.success),
+                        if (isDebt)
+                          _Tag('[DEBT]', AppColors.danger),
+                        if (title != '—')
+                          _Tag(title, rankCol.withValues(alpha: 0.7)),
+                      ],
+                    ),
                   ],
                 ),
               ),
             ],
           ),
         ),
+        const SizedBox(height: 10),
 
-        // ── HP / XP bars ───────────────────────────────────────
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.03),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
-          ),
-          child: Column(
-            children: [
-              _StatBar(
-                label: 'HP',
-                progress: hpProgress,
-                color: AppColors.success,
-                valueText: '${player.hp} / ${player.maxHp}',
-              ),
-              const SizedBox(height: 10),
-              _StatBar(
-                label: 'XP',
-                progress: xpProgress,
-                color: AppColors.primaryBlue,
-                valueText: '$xpInLevel / $xpRange',
-              ),
-            ],
-          ),
-        ),
+        // ── PHYSICAL QUEST MINI-STRIP (compact — full info on Quests tab) ─
+        _PhysicalQuestStrip(player: player),
 
         const SizedBox(height: 12),
 
-        // ── STR / VIT / AGI / INT / PER ───────────────────────
+        // ── SECTION 2: LEVEL + XP BAR ─────────────────────────
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              '${player.level}',
+              style: const TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 64,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                height: 1.0,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'LEVEL',
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 10,
+                  letterSpacing: 2,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        _BarRow(
+          label: 'EXP',
+          progress: xpProgress,
+          color: AppColors.primaryBlue,
+          trailingText: '$xpInLevel / $xpRange',
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'LifetimeXP: ${player.totalXP}',
+          style: AppTextStyles.systemLabel.copyWith(
+            color: Colors.white30,
+            fontSize: 8,
+            letterSpacing: 1.5,
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // ── SECTION 3: HP BAR ──────────────────────────────────
+        _BarRow(
+          label: 'HP',
+          progress: hpProgress,
+          color: _hpBarColor(hpProgress),
+          trailingText: '${player.hp} / ${player.maxHp}',
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'VIT BONUS: +${(player.vitality - 10).clamp(0, 999) * 5} MAX HP',
+          style: AppTextStyles.systemLabel.copyWith(
+            color: Colors.white30,
+            fontSize: 8,
+            letterSpacing: 1.5,
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // ── SECTION 4: STATS GRID ──────────────────────────────
         Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.03),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            color: Colors.white.withValues(alpha: 0.02),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
           child: Column(
             children: [
               Row(
                 children: [
-                  _StatEntry(label: 'STR', value: player.Strength),
-                  const SizedBox(width: 40),
-                  _StatEntry(label: 'VIT', value: player.Vitality),
+                  Expanded(child: _StatCell('STR', player.strength, AppColors.danger)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _StatCell('VIT', player.vitality, AppColors.success)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _StatCell('AGI', player.agility, AppColors.warning)),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               Row(
                 children: [
-                  _StatEntry(label: 'AGI', value: player.Agility),
-                  const SizedBox(width: 40),
-                  _StatEntry(label: 'INT', value: player.Intelligence),
+                  Expanded(child: _StatCell('INT', player.intelligence, AppColors.primaryBlue)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _StatCell('PER', player.perception, const Color(0xFFE040FB))),
+                  const SizedBox(width: 8),
+                  // Stat points available
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.amberAccent.withValues(alpha: 0.05),
+                        border: Border.all(
+                          color: Colors.amberAccent.withValues(alpha: 0.30),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            '${player.availablePoints}',
+                            style: const TextStyle(
+                              color: Colors.amberAccent,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            'FREE',
+                            style: AppTextStyles.systemLabel.copyWith(
+                              color: Colors.amberAccent.withValues(alpha: 0.6),
+                              fontSize: 7,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  _StatEntry(label: 'PER', value: player.Perception),
-                ],
-              ),
+              if (!player.canAllocateStats) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger.withValues(alpha: 0.08),
+                    border: Border.all(
+                        color: AppColors.danger.withValues(alpha: 0.40)),
+                  ),
+                  child: Text(
+                    'DEBT PROTOCOL: STAT ALLOCATION SUSPENDED',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.systemLabel.copyWith(
+                      color: AppColors.danger,
+                      fontSize: 8,
+                      letterSpacing: 1.3,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
-      ],
-    );
-  }
+        const SizedBox(height: 14),
 
-  String _jobLabel(String rank) {
-    switch (rank) {
-      case 'E': return 'NONE';
-      case 'D': return 'APPRENTICE';
-      case 'C': return 'HUNTER';
-      case 'B': return 'ELITE HUNTER';
-      case 'A': return 'MASTER';
-      case 'S': return 'SHADOW MONARCH';
-      case 'GOD': return 'THE ABSOLUTE';
-      default:   return 'NONE';
-    }
-  }
-
-  String _titleLabel(int level) {
-    if (level >= 50) return 'MONARCH';
-    if (level >= 26) return 'SOVEREIGN';
-    if (level >= 11) return 'AWAKENED';
-    return 'NONE';
-  }
-
-  // ============================================================
-  //  QUEST UI
-  // ============================================================
-  Widget _buildQuestUI(BuildContext context, PlayerProvider player) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        const SizedBox(height: 8),
-
-        Text(
-          "Daily Quest: Strength Training has received.",
-          textAlign: TextAlign.center,
-          style: AppTextStyles.bodyPrimary.copyWith(fontSize: 14),
-        ),
-
-        const SizedBox(height: 20),
-
-        Text(
-          "GOAL",
-          style: AppTextStyles.headerMedium.copyWith(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2,
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
-        _questRow(context, "Push-ups", player.pushUps, 100),
-        _questRow(context, "Sit-ups", player.sitUps, 100),
-        _questRow(context, "Squats", player.squatsCount, 100),
-        _questRow(context, "Running", player.running, 10),
-
-        const SizedBox(height: 24),
-
-        RichText(
-          textAlign: TextAlign.center,
-          text: TextSpan(
-            style: AppTextStyles.bodyPrimary,
-            children: [
-              const TextSpan(
-                text: "WARNING: Failure to fulfill quest will result in an appropriate ",
-              ),
-              TextSpan(
-                text: "penalty",
-                style: TextStyle(color: AppColors.danger),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 24),
-
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.white70, width: 2),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: const Icon(Icons.check, color: Colors.greenAccent, size: 24),
-        ),
-      ],
-    );
-  }
-
-  Widget _questRow(BuildContext context, String label, int current, int max) {
-    return GestureDetector(
-      onTap: () => _logReps(context, label),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        // ── SECTION 5: CURRENCY ROW ────────────────────────────
+        Row(
           children: [
-            Text(label, style: AppTextStyles.bodyPrimary.copyWith(fontSize: 16)),
-            Text(
-              "[$current/$max]",
-              style: AppTextStyles.bodyPrimary.copyWith(fontSize: 16),
+            Expanded(
+              child: _CurrencyCell(
+                icon: Icons.account_balance_wallet_rounded,
+                label: 'WALLET XP',
+                value: '${player.walletXP}',
+                color: player.walletXP >= 0 ? Colors.amber : AppColors.danger,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _CurrencyCell(
+                    icon: Icons.diamond_outlined,
+                    label: 'MANA CRYSTALS',
+                    value: ManaCrystalEngine.crystalLabel(
+                        player.manaCrystals, player.maxManaCrystals),
+                    color: const Color(0xFF00E5FF),
+                  ),
+                  const SizedBox(height: 4),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: Stack(
+                      children: [
+                        Container(
+                          height: 3,
+                          color: const Color(0xFF00E5FF).withValues(alpha: 0.10),
+                        ),
+                        FractionallySizedBox(
+                          widthFactor: crystalProgress,
+                          child: Container(
+                            height: 3,
+                            color: const Color(0xFF00E5FF),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
-      ),
-    );
-  }
+        const SizedBox(height: 14),
 
-  void _logReps(BuildContext context, String type) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) {
-        int value = 10;
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return Container(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+        // ── SECTION 6: STREAK STATS ────────────────────────────
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.02),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _StreakCell('STREAK', '${player.streakDays}D', AppColors.success),
+              ),
+              _vDivider(),
+              Expanded(
+                child: _StreakCell('BEST', '${player.bestStreak}D', AppColors.primaryBlue),
+              ),
+              _vDivider(),
+              Expanded(
+                child: _StreakCell('MISSES', '${player.consecutiveMisses}', AppColors.danger),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // ── SECTION 7: PERFORMANCE RECORD (NEW) ─────────────────
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.02),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'PERFORMANCE RECORD',
+                style: AppTextStyles.systemLabel.copyWith(
+                  color: Colors.white38,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
                 children: [
-                  Text("Log $type", style: AppTextStyles.headerMedium),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        onPressed: () =>
-                            setState(() => value = (value - 5).clamp(0, 100)),
-                        icon: const Icon(Icons.remove),
-                      ),
-                      Text("$value", style: const TextStyle(fontSize: 24)),
-                      IconButton(
-                        onPressed: () => setState(() => value += 5),
-                        icon: const Icon(Icons.add),
-                      ),
-                    ],
+                  Expanded(
+                    child: _StreakCell(
+                      'COMPLETED',
+                      '${player.totalQuestsCompleted}',
+                      AppColors.success,
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      Provider.of<PlayerProvider>(context, listen: false)
-                          .addReps(type, value);
-                      Navigator.pop(context);
-                    },
-                    child: const Text("CONFIRM"),
+                  _vDivider(),
+                  Expanded(
+                    child: _StreakCell(
+                      'FAILED',
+                      '${player.totalQuestsFailed}',
+                      AppColors.danger,
+                    ),
+                  ),
+                  _vDivider(),
+                  Expanded(
+                    child: _StreakCell(
+                      'RATE',
+                      '${(player.questCompletionRate * 100).round()}%',
+                      player.questCompletionRate > 0.75
+                          ? AppColors.success
+                          : AppColors.warning,
+                    ),
                   ),
                 ],
               ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildEconomyTerminal(PlayerProvider player, bool isDebt) {
-    final walletColor = isDebt ? AppColors.danger : Colors.amber;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "${player.walletXP} XP",
-          style: AppTextStyles.headerLarge.copyWith(
-            color: walletColor,
-            fontSize: 28,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          isDebt ? "DEBT PROTOCOL ACTIVE" : "SYSTEM BALANCE STABLE",
-          style: AppTextStyles.systemLabel.copyWith(
-            color: walletColor.withOpacity(0.7),
-            fontSize: 10,
+            ],
           ),
         ),
       ],
     );
   }
+
+  Color _hpBarColor(double progress) {
+    if (progress > 0.60) return AppColors.success;
+    if (progress > 0.35) return AppColors.warning;
+    return AppColors.danger;
+  }
+
+  Widget _vDivider() => Container(
+        width: 1,
+        height: 40,
+        color: Colors.white.withValues(alpha: 0.08),
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+      );
+
 }
 
-// ============================================================
-//  SUB-WIDGETS
-// ============================================================
-
-class _JobTitleLine extends StatelessWidget {
-  final String label;
-  final String value;
-  const _JobTitleLine({required this.label, required this.value});
+// ────────────────────────────────────────────────────────────────
+//  PHYSICAL QUEST MINI-STRIP
+//  Compact single-row widget shown on Status Screen.
+//  Tap redirects mentally to Quests tab — no full content here.
+// ────────────────────────────────────────────────────────────────
+class _PhysicalQuestStrip extends StatelessWidget {
+  final PlayerProvider player;
+  const _PhysicalQuestStrip({required this.player});
 
   @override
   Widget build(BuildContext context) {
-    return RichText(
-      text: TextSpan(
-        style: AppTextStyles.bodySecondary.copyWith(fontSize: 13, letterSpacing: 0.5),
+    final pct = player.physicalCompletionPct;
+    final allDone = player.isDailyPhysicalCompleted;
+    final color = allDone ? AppColors.success : AppColors.primaryBlue;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.04),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
         children: [
-          TextSpan(
-            text: '$label: ',
-            style: const TextStyle(color: Color(0xFF9FA7CC)),
+          Icon(
+            allDone ? Icons.check_circle : Icons.radio_button_unchecked,
+            color: color,
+            size: 14,
           ),
-          TextSpan(
-            text: value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  allDone
+                      ? 'DAILY PHYSICAL QUEST — CLEARED'
+                      : 'DAILY PHYSICAL QUEST — IN PROGRESS',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(1),
+                  child: Stack(
+                    children: [
+                      Container(height: 3, color: color.withValues(alpha: 0.10)),
+                      FractionallySizedBox(
+                        widthFactor: pct.clamp(0.0, 1.0),
+                        child: Container(height: 3, color: color),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${(pct * 100).round()}%',
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
@@ -392,16 +562,50 @@ class _JobTitleLine extends StatelessWidget {
   }
 }
 
-class _StatBar extends StatelessWidget {
+
+// ────────────────────────────────────────────────────────────────
+//  REUSABLE MICRO-WIDGETS
+// ────────────────────────────────────────────────────────────────
+
+class _Tag extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _Tag(this.label, this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          border: Border.all(color: color.withValues(alpha: 0.60)),
+          color: color.withValues(alpha: 0.07),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 7,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.8,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BarRow extends StatelessWidget {
   final String label;
   final double progress;
   final Color color;
-  final String valueText;
-  const _StatBar({
+  final String trailingText;
+  const _BarRow({
     required this.label,
     required this.progress,
     required this.color,
-    required this.valueText,
+    required this.trailingText,
   });
 
   @override
@@ -412,29 +616,32 @@ class _StatBar extends StatelessWidget {
           width: 28,
           child: Text(
             label,
-            style: AppTextStyles.systemLabel.copyWith(
+            style: TextStyle(
               color: color,
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
+              letterSpacing: 1.2,
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(2),
             child: Stack(
               children: [
-                Container(height: 10, color: color.withOpacity(0.12)),
+                Container(height: 14, color: color.withValues(alpha: 0.08)),
                 FractionallySizedBox(
                   widthFactor: progress,
                   child: Container(
-                    height: 10,
+                    height: 14,
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.85),
+                      color: color.withValues(alpha: 0.75),
                       boxShadow: [
-                        BoxShadow(color: color.withOpacity(0.45), blurRadius: 6),
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.40),
+                          blurRadius: 6,
+                        ),
                       ],
                     ),
                   ),
@@ -443,12 +650,13 @@ class _StatBar extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         Text(
-          valueText,
-          style: AppTextStyles.systemLabel.copyWith(
-            color: color.withOpacity(0.75),
-            fontSize: 8,
+          trailingText,
+          style: TextStyle(
+            color: color.withValues(alpha: 0.80),
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
             letterSpacing: 0.5,
           ),
         ),
@@ -457,35 +665,125 @@ class _StatBar extends StatelessWidget {
   }
 }
 
-class _StatEntry extends StatelessWidget {
-  final String label;
+class _StatCell extends StatelessWidget {
+  final String stat;
   final int value;
-  const _StatEntry({required this.label, required this.value});
+  final Color color;
+  const _StatCell(this.stat, this.value, this.color);
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.05),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            '$value',
+            style: TextStyle(
+              color: color,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              shadows: [Shadow(color: color.withValues(alpha: 0.4), blurRadius: 10)],
+            ),
+          ),
+          Text(
+            stat,
+            style: TextStyle(
+              color: color.withValues(alpha: 0.65),
+              fontSize: 8,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CurrencyCell extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  const _CurrencyCell({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.04),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: color.withValues(alpha: 0.60),
+                  fontSize: 7,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  shadows: [Shadow(color: color.withValues(alpha: 0.4), blurRadius: 8)],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StreakCell extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _StreakCell(this.label, this.value, this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
       children: [
         Text(
-          '$label: ',
-          style: AppTextStyles.systemLabel.copyWith(
-            color: AppColors.textSecondary,
-            fontSize: 12,
-            letterSpacing: 1.5,
-            fontWeight: FontWeight.w600,
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            shadows: [Shadow(color: color.withValues(alpha: 0.4), blurRadius: 8)],
           ),
         ),
         Text(
-          value.toString(),
-          style: const TextStyle(
-            fontFamily: 'Roboto',
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
-            color: Colors.white,
-            letterSpacing: 0,
+          label,
+          style: TextStyle(
+            color: color.withValues(alpha: 0.55),
+            fontSize: 8,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.5,
           ),
         ),
       ],

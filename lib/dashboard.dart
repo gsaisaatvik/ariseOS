@@ -4,14 +4,12 @@ import 'skills_screen.dart';
 import 'rewards_screen.dart';
 import 'ui/widgets/widgets.dart';
 import 'package:provider/provider.dart';
-import 'widgets/system_overlay.dart';
 import 'player_provider.dart';
-import 'ui/widgets/system_interruption_overlay.dart';
+import 'ui/widgets/rank_up_overlay.dart';
 import 'penalty_zone_screen.dart';
 import 'ui/theme/app_colors.dart';
 
 import 'quests_screen.dart';
-
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -33,7 +31,7 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
   final List<HolographicNavItem> _navItems = const [
     HolographicNavItem(icon: Icons.analytics_outlined, label: 'Status'),
     HolographicNavItem(icon: Icons.flag_outlined, label: 'Quests'),
-    HolographicNavItem(icon: Icons.auto_awesome_outlined, label: 'Skills'),
+    HolographicNavItem(icon: Icons.history_edu_outlined, label: 'Chronicle'),
     HolographicNavItem(icon: Icons.card_giftcard_outlined, label: 'Rewards'),
   ];
 
@@ -141,29 +139,18 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
               ),
             ),
           ),
+
+          // ── Rank-Up Overlay (fires AFTER level-up queue is empty) ──
           Consumer<PlayerProvider>(
             builder: (context, player, _) {
-              final evt = player.nextLevelUpEvent;
-              if (evt == null) return const SizedBox.shrink();
+              // Only display when level-up queue is fully consumed
+              if (player.nextLevelUpEvent != null) return const SizedBox.shrink();
+              final rankEvt = player.nextRankUpEvent;
+              if (rankEvt == null) return const SizedBox.shrink();
 
-              return SystemInterruptionOverlay(
-                event: evt,
-                player: player,
-                onAllocationDone: () {
-                  player.consumeNextLevelUpEvent();
-                },
-                onAllocationOpened: () {
-                  player.clearPendingAllocationReminder();
-                },
-                onDefer: () {
-                  player.setPendingAllocationReminder(true);
-                  player.consumeNextLevelUpEvent();
-                  SystemOverlay.show(
-                    context,
-                    title: 'SYSTEM',
-                    message: 'Allocation deferred. Potential remains unspent.',
-                  );
-                },
+              return RankUpOverlay(
+                event: rankEvt,
+                onAcknowledge: () => player.consumeNextRankUpEvent(),
               );
             },
           ),
@@ -186,4 +173,3 @@ class _DashboardState extends State<Dashboard> with TickerProviderStateMixin {
     );
   }
 }
-

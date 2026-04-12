@@ -6,4 +6,5 @@ export 'secondary_button.dart';
 export 'holographic_nav_bar.dart';
 export 'notification_modal.dart';
 export 'quest_cleared_overlay.dart';
-
+export 'quest_reward_popup.dart';
+export 'rank_up_overlay.dart';

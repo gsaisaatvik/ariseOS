@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 
 import '../player_provider.dart';
 import '../services/hive_service.dart';
-import '../ui/widgets/system_notification_card.dart';
 import 'system_overlay.dart';
 
 /// 90-minute focus timer.
@@ -204,7 +203,6 @@ class _StudyTimerCardState extends State<StudyTimerCard> {
           title: 'DIRECTIVE TERMINATED',
           message:
               'Directive aborted. Progress lost.\nWallet penalty may apply.',
-          type: SystemNotificationType.danger,
         );
       }
       return;

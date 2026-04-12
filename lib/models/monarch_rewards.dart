@@ -17,6 +17,17 @@ class MonarchRewards {
 
   /// Duration in hours for the Penalty Zone lockout.
   static const int penaltyZoneDurationHours = 4;
+
+  // ── Mana Crystal Awards ────────────────────────────────────────
+
+  /// Crystals awarded for Limiter Removal (≥200% physical quest).
+  static const int manaCrystalsPerLimiterRemoval = 1;
+
+  /// Crystals awarded for completing a 7-day streak milestone.
+  static const int manaCrystalsPerWeekStreak = 5;
+
+  /// Crystals awarded every 10th Technical Quest completion.
+  static const int manaCrystalsPerTechnicalMilestone = 3;
 }
 
 /// Quest lock state for Cognitive and Technical quests.

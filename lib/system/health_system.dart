@@ -9,6 +9,8 @@ class HealthSystem {
   HealthSystem._();
 
   static const int defaultMaxHp = 100;
+  static const int baseVitality = 10;
+  static const int hpPerVitalityPoint = 5;
 
   // HP deltas (configurable constants).
   static const int lossOnAbort = 8;
@@ -16,9 +18,21 @@ class HealthSystem {
   static const int lossOnRedemption = 4;
   static const int lossOnMiss = 10;
 
+  /// Computes the maximum HP based on the player's Vitality stat.
+  ///
+  /// Formula: MaxHP = 100 + (VIT - 10) × 5
+  /// At VIT=10 (base): MaxHP = 100
+  /// At VIT=20: MaxHP = 150
+  /// At VIT=50: MaxHP = 300
+  static int computeMaxHp(int vitality) {
+    final bonus = (vitality - baseVitality).clamp(0, 200) * hpPerVitalityPoint;
+    return defaultMaxHp + bonus;
+  }
+
   static const int recoveryOnDirectiveComplete = 4;
   static const int recoveryOnStudyComplete = 2;
   static const int recoveryOnStreakExtend = 3;
+  static const int recoveryOnPhysicalComplete = 10; // full physical quest cleared
 
   static HealthZone zoneFor(int hp, int maxHp) {
     // V1 visible states:
